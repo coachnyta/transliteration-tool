@@ -75,12 +75,14 @@ If these documents conflict, stop and ask the user. Do not resolve a conflict by
 - Keep conversion logic independent of React, the DOM, and browser-only APIs.
 - Use Node.js-compatible TypeScript for the ingestion pipeline.
 - Do not add a dependency without explicit user approval.
-- Use only Rime-Cantonese commit `259f0e48bba840c3a2e0d117539e96937f3d89bc`.
+- Use Rime-Cantonese commit `259f0e48bba840c3a2e0d117539e96937f3d89bc`.
+- Use upstream source repository `CanCLID/rime-cantonese-upstream` at commit `4cb67a486312e5f0f13cc842433617104d75de87`.
 - Use only the files approved in `docs/data-sources.md`.
 - Do not fetch dictionary data at runtime.
 - Do not invent Jyutping readings, dictionary entries, or test expectations.
 - Preserve source provenance for every dictionary-derived result.
 - Treat malformed, incomplete, or conflicting source entries as validation failures or quarantined records; do not silently discard them.
+- Reject input longer than 100 UTF-16 code units with a structured validation error.
 
 ## Security and integrity
 
@@ -135,11 +137,13 @@ Export the complete public contract defined in `docs/data-model.md`:
 - `SelectionReason`
 - `EntryType`
 - `JyutpingSyllable`
+- `ReadingProvenance`
 - `Reading`
 - `DictionaryEntry`
+- `ConversionOverride`
+- `ConversionOptions`
 - `ConversionSegment`
 - `ConversionResult`
-- `ConversionOptions`
 
 Do not duplicate type definitions across modules.
 
@@ -168,6 +172,7 @@ It must:
 - Support word and character lookup.
 - Return all relevant readings as structured `Reading` objects.
 - Preserve entry source, source entry ID, source version, and priority.
+- Merge multiple provenance records with the same Jyutping pronunciation into one distinct reading.
 - Implement deterministic tie-breaking.
 
 ### Segmenter
@@ -192,9 +197,10 @@ convertCantoneseTitle(
 It must:
 
 - Return a `ConversionResult` conforming to `docs/data-model.md`.
+- Reject input longer than 100 UTF-16 code units with a structured validation error.
 - Produce one segment for each recognized unit.
 - Preserve UTF-16 code-unit offsets relative to the original input.
-- Return alternatives as structured `Reading[]`.
+- Return alternatives as structured `Reading[]` containing only distinct pronunciations.
 - Apply deterministic default-reading selection.
 - Mark unmatched Cantonese text as unresolved.
 - Mark non-Cantonese text as passthrough.
@@ -209,6 +215,8 @@ It must:
 - Format selected Jyutping readings using tone numbers 1–6.
 - Separate Jyutping syllables with single spaces.
 - Preserve non-Cantonese passthrough text unchanged.
+- Insert exactly one space at a boundary between a Cantonese segment and an adjacent passthrough segment containing a letter or digit.
+- Not insert a space around punctuation-only passthrough segments.
 - Produce `finalJyutping` only when every Cantonese segment has a selected reading.
 - Provide a segment-level breakdown suitable for later UI rendering.
 
@@ -219,23 +227,28 @@ Create `scripts/ingest-rime-cantonese.ts`.
 It must:
 
 1. Read the pinned Rime-Cantonese files from `data/raw/`.
-2. Parse the source data without executing or evaluating it.
-3. Validate every entry.
-4. Normalize entries into the internal data model.
-5. Collapse exact duplicates.
-6. Retain distinct readings.
-7. Build lookup indexes.
-8. Write normalized JSON output to `data/normalized/`.
-9. Emit a machine-readable ingestion report.
+2. Verify each file exists and matches its recorded SHA-256 hash.
+3. Fail clearly when a file is absent or its hash does not match.
+4. Parse the source data without executing or evaluating it.
+5. Validate every entry.
+6. Normalize entries into the internal data model.
+7. Collapse exact duplicates.
+8. Merge identical pronunciations and preserve all supporting provenance.
+9. Retain distinct readings.
+10. Build lookup indexes.
+11. Write normalized JSON output to `data/normalized/`.
+12. Emit a machine-readable ingestion report.
 
 The ingestion report must include:
 
-- Source repository and pinned commit
+- Source repository and pinned commits
 - Files processed
+- File SHA-256 hashes and verification results
 - Entries read
 - Entries accepted
 - Entries rejected or quarantined
 - Exact duplicates collapsed
+- Identical pronunciations merged
 - Distinct readings retained
 - Duplicate or conflicting entries
 - Character, word, and phrase counts
@@ -255,7 +268,10 @@ Validate:
 - Traditional and Simplified handling.
 - Multiple readings.
 - Exact duplicates and distinct readings.
+- Identical pronunciations from multiple provenance records.
 - Invalid records.
+- Override offset and original-text matching.
+- Override overlap.
 
 Do not silently discard malformed records.
 
@@ -277,8 +293,9 @@ Proposed tooling, subject to user approval:
 | `vitest` | Unit, integration, and ingestion tests | Development dependency |
 | `eslint` | Linting | Development dependency |
 | `typescript-eslint` | TypeScript-aware linting | Development dependency |
+| `yaml` | Safe structured parsing of pinned YAML dictionary files | Runtime dependency for ingestion |
 
-Do not install any dependency until the user approves the exact list.
+Do not install any dependency until the user approves the exact list, including the exact `yaml` version and license.
 
 ## Verification commands
 
@@ -299,15 +316,17 @@ All applicable commands must pass.
 Milestone 1a is complete when:
 
 - The pinned Rime-Cantonese data can be ingested reproducibly.
+- Raw file hashes are verified before ingestion.
 - The normalized dictionary is validated and contains provenance metadata.
 - The conversion core produces structured results for test titles.
 - Phrase, word, and character lookup follow the documented matching algorithm.
-- Multiple readings are preserved and exposed.
+- Multiple distinct readings are preserved and exposed.
 - Default reading selection is deterministic.
 - Ambiguous segments without a usable default require user selection.
 - Non-Cantonese text is passed through unchanged.
 - Unresolved Cantonese text is clearly identified.
 - Tone-number Jyutping is formatted consistently.
+- Mixed-script boundaries use the documented spacing rule.
 - All required tests, type checks, lint checks, and coverage reporting pass.
 - No UI, other-language, ML, LLM, persistence, or import/export functionality has been added.
 - Documentation accurately reflects the implemented behavior.

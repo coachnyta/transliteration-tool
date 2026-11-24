@@ -66,6 +66,7 @@ Proposed tooling, subject to approval:
 - TypeScript compiler for type checking.
 - ESLint with TypeScript support for linting.
 - Vitest coverage reporting.
+- `yaml` for parsing pinned dictionary files.
 
 The implementation plan must list every dependency, exact version, purpose, and license before installation.
 
@@ -116,6 +117,8 @@ Create a small fixture dictionary containing:
 - At least 1 invalid entry.
 - At least 1 exact duplicate entry.
 - At least 1 same-text/different-reading conflict.
+- At least 1 case with identical Jyutping from multiple source entry IDs.
+- At least 1 case with a non-null priority and one with `null` priority.
 
 Every fixture must include:
 
@@ -126,7 +129,8 @@ Every fixture must include:
 - Original text
 - Jyutping syllables
 - Tone numbers
-- Priority
+- Priority, which may be `null`
+- Provenance records
 - Alternatives, where applicable
 
 ### Title fixtures
@@ -150,7 +154,7 @@ Create at least 20 title fixtures covering:
 - A title with repeated characters
 - An empty string
 - Whitespace-only input
-- A very long input beyond the v1 title limit
+- Input longer than 100 UTF-16 code units
 - Input containing emoji
 - Input containing supplementary-plane characters
 - Input with repeated whitespace
@@ -166,28 +170,34 @@ Verify:
 - A word match defeats character fallback.
 - Character fallback occurs only when no word or phrase match exists.
 - User override defeats all dictionary matches.
-- Equal-length candidates resolve by dictionary priority.
+- Equal-length candidates resolve by non-null dictionary priority.
+- A non-null priority outranks `null` priority.
 - Equal-length and equal-priority candidates resolve by stable source order.
 - Matching is anchored at the current UTF-16 code-unit offset.
 - Offsets remain correct for emoji, supplementary-plane characters, repeated whitespace, and mixed scripts.
 
 ## Mandatory ambiguity tests
 
-| Case | Expected `segmentType` | Expected `readingStatus` | Expected `selectionReason` |
-|---|---|---|---|
-| One credible reading | `cantonese` | `resolved` | `dictionary-default`, `highest-priority`, or `stable-source-order` |
-| Multiple readings with explicit dictionary default | `cantonese` | `ambiguous` | `dictionary-default` |
-| Multiple readings with different priorities | `cantonese` | `ambiguous` | `highest-priority` |
-| Multiple readings with equal priority | `cantonese` | `ambiguous` | `stable-source-order` |
-| Multiple readings with no usable ordering | `cantonese` | `ambiguous` | `none` |
-| User override among alternatives | `cantonese` | `ambiguous` | `user-override` |
-| Cantonese text with no reading | `cantonese` | `unresolved` | `none` |
-| Passthrough text | `passthrough` | `resolved` | `none` |
+| Case | Expected `segmentType` | Expected `readingStatus` | Expected `selectedReading` | Expected `selectionReason` |
+|---|---|---|---|---|
+| One credible reading | `cantonese` | `resolved` | Required | `dictionary-default`, `highest-priority`, or `stable-source-order` |
+| Multiple readings with explicit dictionary default | `cantonese` | `ambiguous` | Required | `dictionary-default` |
+| Multiple readings with different non-null priorities | `cantonese` | `ambiguous` | Required | `highest-priority` |
+| Multiple readings with equal non-null priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
+| Multiple readings with all `null` priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
+| Multiple readings with no usable ordering | `cantonese` | `ambiguous` | `null` | `none` |
+| User override among alternatives | `cantonese` | `ambiguous` | Required | `user-override` |
+| Cantonese text with no reading | `cantonese` | `unresolved` | `null` | `none` |
+| Passthrough text | `passthrough` | `resolved` | `null` | `none` |
 
 Additional assertions:
 
+- `selectedReading` must be non-null when `readingStatus` is `resolved`.
+- `selectedReading` may be `null` when `readingStatus` is `ambiguous` and no deterministic default exists.
+- `selectedReading` must be `null` when `readingStatus` is `unresolved`.
 - `selectedReading` must be one of `alternatives` when non-null.
-- Every alternative must retain source, source entry ID, source version, priority, and default flag.
+- Every alternative must retain structured provenance.
+- Identical Jyutping from multiple source entry IDs must produce one alternative, not false ambiguity.
 - `finalJyutping` must be `null` when any Cantonese segment lacks a selected reading.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 
@@ -217,7 +227,10 @@ Verify:
 - Character lookup.
 - Multiple-reading retrieval.
 - Provenance metadata.
+- Merging identical pronunciations from multiple source entries.
+- Distinct-pronunciation retention.
 - Deterministic ordering for equal-priority readings.
+- `null` priority handling.
 - Missing-entry behavior.
 - Invalid-entry handling.
 - Traditional and Simplified lookup, if supported.
@@ -235,6 +248,8 @@ Verify:
 - Passthrough text.
 - Offset correctness.
 - Deterministic tie-breaking.
+- Invalid override rejection.
+- Overlapping override rejection.
 
 ### Converter
 
@@ -248,7 +263,7 @@ Verify:
 - Unresolved handling.
 - Passthrough handling.
 - Empty and whitespace-only input.
-- Input beyond the v1 length limit.
+- Input longer than 100 UTF-16 code units returns a structured validation error.
 - `finalJyutping` completeness rules.
 - No unexpected network request.
 
@@ -259,6 +274,8 @@ Verify:
 - Tone numbers 1–6.
 - Space-separated syllables.
 - Passthrough preservation.
+- One-space boundary between Cantonese and alphanumeric passthrough.
+- No added boundary space around punctuation-only passthrough.
 - Final Jyutping assembly.
 - Segment breakdown.
 - No input-character loss.
@@ -291,12 +308,16 @@ Specifically:
 Verify:
 
 - Pinned source files are read from `data/raw/`.
+- File presence and SHA-256 hashes are verified before parsing.
+- A missing raw file causes a clear failure.
+- A hash mismatch causes a clear failure.
 - Source data is parsed without execution or evaluation.
 - Normalized JSON output is produced.
 - Required fields are validated.
 - Malformed entries are rejected or quarantined.
 - Exact duplicates are collapsed.
 - Distinct readings are retained.
+- Identical pronunciations from multiple source entries are merged while preserving provenance.
 - Source and source entry IDs are retained.
 - Ingestion report is generated.
 - Deterministic output for the same pinned input.
@@ -341,16 +362,17 @@ Milestone 1a passes when:
 4. `npm run test:coverage` passes.
 5. `npm run ingest:data` completes successfully using the pinned source.
 6. Every dictionary-derived result includes source provenance.
-7. Multiple readings are preserved.
+7. Multiple distinct readings are preserved.
 8. Default selection follows the documented deterministic order.
 9. Ambiguous segments without a usable default require user selection.
 10. Matching follows the documented anchored, longest-first, tie-broken algorithm.
 11. Offsets use UTF-16 code units and refer to the original input.
 12. Non-Cantonese text is passed through unchanged.
 13. No input character is silently omitted.
-14. Golden-title tests pass or explicitly document an approved limitation.
-15. The verification model finds no unresolved `BLOCKER` findings.
-16. The user manually approves linguistic results for the golden title set.
+14. Input longer than 100 UTF-16 code units is rejected with a structured validation error.
+15. Golden-title tests pass or explicitly document an approved limitation.
+16. The verification model finds no unresolved `BLOCKER` findings.
+17. The user manually approves linguistic results for the golden title set.
 
 ## Manual validation checklist
 

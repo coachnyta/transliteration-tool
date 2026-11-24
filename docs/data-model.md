@@ -40,18 +40,23 @@ type EntryType = "character" | "word" | "phrase";
 
 ## Reading
 
-A `Reading` represents one candidate pronunciation for a segment.
+A `Reading` represents one distinct candidate pronunciation for a segment.
 
 ```ts
+interface ReadingProvenance {
+  sourceEntryId: string;
+  sourceName: string;
+  sourceVersion: string;
+  priority: number | null;
+}
+
 interface Reading {
   id: string;
   jyutping: string;
   syllables: JyutpingSyllable[];
   source: ReadingSource;
-  sourceEntryId: string | null;
-  sourceName: string | null;
-  sourceVersion: string | null;
-  priority: number;
+  provenance: ReadingProvenance[];
+  priority: number | null;
   isDefault: boolean;
   notes?: string;
 }
@@ -63,12 +68,12 @@ interface Reading {
 | `jyutping` | string | Yes | Tone-number Jyutping for the segment | Valid Jyutping; tone numbers 1–6 |
 | `syllables` | JyutpingSyllable[] | Yes | Individual Jyutping syllables | Non-empty |
 | `source` | ReadingSource | Yes | Origin of the reading | — |
-| `sourceEntryId` | string \| null | Conditional | Dictionary entry identifier | Required when `source` is `dictionary` |
-| `sourceName` | string \| null | Conditional | Dictionary source name | Required when `source` is `dictionary` |
-| `sourceVersion` | string \| null | Conditional | Dictionary version or commit | Required when `source` is `dictionary` |
-| `priority` | number | Yes | Deterministic ranking value | Higher means more preferred |
+| `provenance` | ReadingProvenance[] | Conditional | Supporting dictionary provenance records | Required and non-empty when `source` is `dictionary` |
+| `priority` | number \| null | Yes | Deterministic ranking value | `null` when the source provides no usable priority or frequency; higher non-null values are more preferred |
 | `isDefault` | boolean | Yes | Whether this is the automatically selected default | At most one reading may be `true` |
 | `notes` | string | No | Optional explanation | — |
+
+Two dictionary-derived readings represent the same pronunciation when their `jyutping` values are identical. Multiple provenance records supporting the same pronunciation must be merged into one `Reading`; they must not create multiple alternatives.
 
 ## JyutpingSyllable
 
@@ -99,7 +104,7 @@ interface DictionaryEntry {
   traditionalText: string | null;
   simplifiedText: string | null;
   readings: Reading[];
-  priority: number;
+  priority: number | null;
 }
 ```
 
@@ -114,7 +119,39 @@ interface DictionaryEntry {
 | `traditionalText` | string \| null | Conditional | Traditional form | Required when applicable |
 | `simplifiedText` | string \| null | Conditional | Simplified form | Required when applicable |
 | `readings` | Reading[] | Yes | All distinct credible readings | Non-empty |
-| `priority` | number | Yes | Deterministic ranking value | Higher means more preferred |
+| `priority` | number \| null | Yes | Deterministic ranking value | `null` when the source provides no usable priority or frequency |
+
+## ConversionOptions
+
+```ts
+interface ConversionOverride {
+  startOffset: number;
+  endOffset: number;
+  originalText: string;
+  reading: Reading;
+}
+
+interface ConversionOptions {
+  overrides?: ConversionOverride[];
+}
+```
+
+| Field | Type | Required | Description | Constraints |
+|---|---|---|---|---|
+| `startOffset` | number | Yes | Inclusive start offset in the original input | UTF-16 code-unit index; >= 0 |
+| `endOffset` | number | Yes | Exclusive end offset in the original input | UTF-16 code-unit index; > `startOffset` |
+| `originalText` | string | Yes | Exact original text covered by the override | Must equal the input slice between the offsets |
+| `reading` | Reading | Yes | Replacement reading | Must have `source: "user-override"` or `"manual-entry"` |
+| `overrides` | ConversionOverride[] | No | In-memory user overrides | Optional |
+
+Override rules:
+
+- An override must match the original input exactly at `startOffset` and `endOffset`.
+- `originalText` must equal the input slice between those offsets.
+- Overlapping overrides are invalid and cause a validation error.
+- A valid override takes precedence over every dictionary match.
+- An override sets `userOverride: true` and `selectionReason: "user-override"`.
+- An override that does not match the input causes a validation error.
 
 ## ConversionSegment
 
@@ -142,8 +179,8 @@ interface ConversionSegment {
 | `endOffset` | number | Yes | Exclusive end offset in the original input | UTF-16 code-unit index; > `startOffset` |
 | `segmentType` | SegmentType | Yes | Classification of the original text | — |
 | `readingStatus` | ReadingStatus | Yes | Certainty of the selected reading | — |
-| `selectedReading` | Reading \| null | Conditional | Reading displayed by default | Required when `readingStatus` is `resolved` or `ambiguous`; `null` when `unresolved` |
-| `alternatives` | Reading[] | Yes | All credible readings, including the selected reading | May be empty |
+| `selectedReading` | Reading \| null | Conditional | Reading displayed by default | Required when `readingStatus` is `resolved`; optional when `ambiguous`; must be `null` when `unresolved` |
+| `alternatives` | Reading[] | Yes | All distinct credible readings, including the selected reading when present | May be empty |
 | `selectionReason` | SelectionReason | Conditional | Why `selectedReading` was chosen | Required when `readingStatus` is `resolved` or `ambiguous` |
 | `userOverride` | boolean | Yes | Whether the user explicitly selected or changed the reading | Default `false` |
 | `notes` | string | No | Optional human-readable explanation | — |
@@ -187,20 +224,24 @@ interface ConversionResult {
 | `segmentType` | `readingStatus` | `selectedReading` | Meaning |
 |---|---|---|---|
 | `cantonese` | `resolved` | Required | One credible reading was found |
-| `cantonese` | `ambiguous` | Required if deterministic default exists; otherwise `null` | Multiple credible readings exist |
+| `cantonese` | `ambiguous` | Required if deterministic default exists; otherwise `null` | Multiple distinct credible readings exist |
 | `cantonese` | `unresolved` | `null` | No credible reading was found |
 | `passthrough` | `resolved` | `null` | Non-Cantonese text intentionally unchanged |
 | `unresolved` | `unresolved` | `null` | Text could not be classified or converted |
 
 ## Invariants
 
-- A segment with `alternatives.length > 1` must have `readingStatus: "ambiguous"`.
+- A segment with more than one distinct Jyutping pronunciation must have `readingStatus: "ambiguous"`.
+- Multiple provenance records with the same Jyutping pronunciation must not create multiple alternatives.
+- If `readingStatus` is `resolved`, `selectedReading` must be non-null.
 - If `readingStatus` is `ambiguous` and `selectedReading` is non-null, then `selectedReading.id` must match exactly one entry in `alternatives`.
+- If `readingStatus` is `ambiguous` and no deterministic default can be selected, `selectedReading` must be `null`.
 - If `readingStatus` is `unresolved`, then `selectedReading` must be `null`.
 - A `passthrough` segment must have `readingStatus: "resolved"`, `selectedReading: null`, and `alternatives: []`.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 - `finalJyutping` must be `null` if any Cantonese segment has `readingStatus: "unresolved"` or has no selected reading.
-- Every `Reading` with `source: "dictionary"` must include `sourceEntryId`, `sourceName`, and `sourceVersion`.
+- Every `Reading` with `source: "dictionary"` must include non-empty `provenance`.
+- A `null` priority must not outrank a non-null priority.
 
 ## Example: ambiguous Cantonese segment
 
@@ -222,9 +263,14 @@ interface ConversionResult {
       }
     ],
     "source": "dictionary",
-    "sourceEntryId": "<source entry id>",
-    "sourceName": "rime-cantonese",
-    "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+    "provenance": [
+      {
+        "sourceEntryId": "<source entry id>",
+        "sourceName": "rime-cantonese",
+        "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+        "priority": 100
+      }
+    ],
     "priority": 100,
     "isDefault": true
   },
@@ -239,9 +285,14 @@ interface ConversionResult {
         }
       ],
       "source": "dictionary",
-      "sourceEntryId": "<source entry id>",
-      "sourceName": "rime-cantonese",
-      "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+      "provenance": [
+        {
+          "sourceEntryId": "<source entry id>",
+          "sourceName": "rime-cantonese",
+          "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+          "priority": 100
+        }
+      ],
       "priority": 100,
       "isDefault": true
     },
@@ -255,16 +306,21 @@ interface ConversionResult {
         }
       ],
       "source": "dictionary",
-      "sourceEntryId": "<alternative source entry id>",
-      "sourceName": "rime-cantonese",
-      "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+      "provenance": [
+        {
+          "sourceEntryId": "<alternative source entry id>",
+          "sourceName": "rime-cantonese",
+          "sourceVersion": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+          "priority": 80
+        }
+      ],
       "priority": 80,
       "isDefault": false
     }
   ],
   "selectionReason": "highest-priority",
   "userOverride": false,
-  "notes": "Multiple dictionary readings; highest-priority reading selected."
+  "notes": "Multiple distinct dictionary readings; highest-priority reading selected."
 }
 ```
 
