@@ -82,7 +82,7 @@ If these documents conflict, stop and ask the user. Do not resolve a conflict by
 - Do not invent Jyutping readings, dictionary entries, or test expectations.
 - Preserve source provenance for every dictionary-derived result.
 - Treat malformed, incomplete, or conflicting source entries as validation failures or quarantined records; do not silently discard them.
-- Reject input longer than 100 UTF-16 code units with a structured validation error.
+- Reject input longer than 100 UTF-16 code units with `INPUT_TOO_LONG`.
 
 ## Security and integrity
 
@@ -112,6 +112,7 @@ If these documents conflict, stop and ask the user. Do not resolve a conflict by
 │       └── formatter.ts
 ├── data/
 │   ├── raw/
+│   │   └── manifest.json
 │   └── normalized/
 ├── tests/
 │   ├── unit/
@@ -136,12 +137,15 @@ Export the complete public contract defined in `docs/data-model.md`:
 - `ReadingSource`
 - `SelectionReason`
 - `EntryType`
+- `ConversionErrorCode`
 - `JyutpingSyllable`
 - `ReadingProvenance`
 - `Reading`
 - `DictionaryEntry`
 - `ConversionOverride`
 - `ConversionOptions`
+- `ConversionError`
+- `ConversionOutcome`
 - `ConversionSegment`
 - `ConversionResult`
 
@@ -191,18 +195,22 @@ Expose:
 convertCantoneseTitle(
   input: string,
   options?: ConversionOptions
-): ConversionResult
+): ConversionOutcome
 ```
 
 It must:
 
-- Return a `ConversionResult` conforming to `docs/data-model.md`.
-- Reject input longer than 100 UTF-16 code units with a structured validation error.
+- Return a `ConversionOutcome`, not a bare `ConversionResult`.
+- Return `{ status: "ok", result }` for a successful conversion.
+- Return `{ status: "error", error }` for validation failures.
+- Reject input longer than 100 UTF-16 code units with `INPUT_TOO_LONG`.
+- Reject invalid or overlapping overrides with the appropriate error code.
 - Produce one segment for each recognized unit.
 - Preserve UTF-16 code-unit offsets relative to the original input.
 - Return alternatives as structured `Reading[]` containing only distinct pronunciations.
 - Apply deterministic default-reading selection.
 - Mark unmatched Cantonese text as unresolved.
+- Mark unsupported scripts as unresolved.
 - Mark non-Cantonese text as passthrough.
 - Never silently omit input characters.
 
@@ -214,10 +222,10 @@ It must:
 
 - Format selected Jyutping readings using tone numbers 1–6.
 - Separate Jyutping syllables with single spaces.
-- Preserve non-Cantonese passthrough text unchanged.
-- Insert exactly one space at a boundary between a Cantonese segment and an adjacent passthrough segment containing a letter or digit.
-- Not insert a space around punctuation-only passthrough segments.
-- Produce `finalJyutping` only when every Cantonese segment has a selected reading.
+- Preserve non-Cantonese passthrough text and original whitespace exactly.
+- Insert exactly one space only when a Cantonese segment is directly adjacent to an alphanumeric passthrough segment with no whitespace between them.
+- Not insert or normalize whitespace at passthrough-to-passthrough boundaries.
+- Produce `finalJyutping` only when every Cantonese segment has a selected reading, every passthrough segment is resolved, and no segment is `unresolved`.
 - Provide a segment-level breakdown suitable for later UI rendering.
 
 ## Data ingestion
@@ -227,23 +235,26 @@ Create `scripts/ingest-rime-cantonese.ts`.
 It must:
 
 1. Read the pinned Rime-Cantonese files from `data/raw/`.
-2. Verify each file exists and matches its recorded SHA-256 hash.
-3. Fail clearly when a file is absent or its hash does not match.
-4. Parse the source data without executing or evaluating it.
-5. Validate every entry.
-6. Normalize entries into the internal data model.
-7. Collapse exact duplicates.
-8. Merge identical pronunciations and preserve all supporting provenance.
-9. Retain distinct readings.
-10. Build lookup indexes.
-11. Write normalized JSON output to `data/normalized/`.
-12. Emit a machine-readable ingestion report.
+2. Read `data/raw/manifest.json`.
+3. Verify each file exists.
+4. Verify each file’s Git blob SHA against the manifest.
+5. Verify each file’s SHA-256 hash against the manifest.
+6. Fail clearly when a file is absent or either integrity check fails.
+7. Parse the source data without executing or evaluating it.
+8. Validate every entry.
+9. Normalize entries into the internal data model.
+10. Collapse exact duplicates.
+11. Merge identical pronunciations and preserve all supporting provenance.
+12. Retain distinct readings.
+13. Build lookup indexes.
+14. Write normalized JSON output to `data/normalized/`.
+15. Emit a machine-readable ingestion report.
 
 The ingestion report must include:
 
 - Source repository and pinned commits
 - Files processed
-- File SHA-256 hashes and verification results
+- Git blob SHA and SHA-256 verification results
 - Entries read
 - Entries accepted
 - Entries rejected or quarantined
@@ -270,32 +281,21 @@ Validate:
 - Exact duplicates and distinct readings.
 - Identical pronunciations from multiple provenance records.
 - Invalid records.
-- Override offset and original-text matching.
-- Override overlap.
+- Override kind, offset, original-text matching, and overlap.
 
 Do not silently discard malformed records.
 
 ## Tooling and dependencies
 
-Before installation, the implementation plan must list every proposed dependency with:
+The following is the exact proposed dependency list. Do not install any dependency until the user approves this exact list.
 
-- Package name
-- Exact version or version range
-- Purpose
-- License
-- Whether it is a runtime, development, or test dependency
-
-Proposed tooling, subject to user approval:
-
-| Package | Purpose | Proposed status |
-|---|---|---|
-| `typescript` | TypeScript compiler and type checking | Development dependency |
-| `vitest` | Unit, integration, and ingestion tests | Development dependency |
-| `eslint` | Linting | Development dependency |
-| `typescript-eslint` | TypeScript-aware linting | Development dependency |
-| `yaml` | Safe structured parsing of pinned YAML dictionary files | Runtime dependency for ingestion |
-
-Do not install any dependency until the user approves the exact list, including the exact `yaml` version and license.
+| Package | Version | License | Classification | Purpose |
+|---|---:|---|---|---|
+| `typescript` | `7.0.2` | Apache-2.0 | Development | TypeScript compiler and type checking |
+| `vitest` | `5.1.1` | MIT | Development | Unit, integration, and ingestion tests |
+| `eslint` | `10.15.0` | MIT | Development | Linting |
+| `typescript-eslint` | `8.73.0` | MIT | Development | TypeScript-aware linting |
+| `yaml` | `2.9.1` | ISC | Runtime, ingestion only | Safe structured parsing of pinned YAML dictionary files |
 
 ## Verification commands
 
@@ -316,14 +316,14 @@ All applicable commands must pass.
 Milestone 1a is complete when:
 
 - The pinned Rime-Cantonese data can be ingested reproducibly.
-- Raw file hashes are verified before ingestion.
+- Raw file Git blob SHAs and SHA-256 hashes are verified before ingestion.
 - The normalized dictionary is validated and contains provenance metadata.
-- The conversion core produces structured results for test titles.
+- The conversion core produces `ConversionOutcome` results for test titles.
 - Phrase, word, and character lookup follow the documented matching algorithm.
 - Multiple distinct readings are preserved and exposed.
 - Default reading selection is deterministic.
-- Ambiguous segments without a usable default require user selection.
 - Non-Cantonese text is passed through unchanged.
+- Unsupported scripts are marked unresolved.
 - Unresolved Cantonese text is clearly identified.
 - Tone-number Jyutping is formatted consistently.
 - Mixed-script boundaries use the documented spacing rule.
@@ -337,7 +337,7 @@ Before writing implementation code, present:
 
 1. A concise implementation plan.
 2. The exact files to create or modify.
-3. Every proposed dependency, version, purpose, and license.
+3. The exact dependency list above, including versions and licenses.
 4. The test strategy.
 5. Any ambiguities, conflicts, or missing decisions.
 

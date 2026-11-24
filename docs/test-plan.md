@@ -60,15 +60,13 @@ Milestone 1a may test in-memory override behavior, but must not test persistence
 
 Use the tools approved in the implementation plan.
 
-Proposed tooling, subject to approval:
+Approved dependency versions and licenses:
 
-- Vitest for unit, integration, and ingestion tests.
-- TypeScript compiler for type checking.
-- ESLint with TypeScript support for linting.
-- Vitest coverage reporting.
-- `yaml` for parsing pinned dictionary files.
-
-The implementation plan must list every dependency, exact version, purpose, and license before installation.
+- `typescript` `7.0.2`, Apache-2.0
+- `vitest` `5.1.1`, MIT
+- `eslint` `10.15.0`, MIT
+- `typescript-eslint` `8.73.0`, MIT
+- `yaml` `2.9.1`, ISC
 
 ## Required commands
 
@@ -158,7 +156,7 @@ Create at least 20 title fixtures covering:
 - Input containing emoji
 - Input containing supplementary-plane characters
 - Input with repeated whitespace
-- Input containing unsupported CJK scripts, if applicable
+- Input containing unsupported CJK scripts, such as Korean Hangul or Japanese kana
 
 ## Mandatory matching tests
 
@@ -169,7 +167,8 @@ Verify:
 - A phrase match defeats a word match.
 - A word match defeats character fallback.
 - Character fallback occurs only when no word or phrase match exists.
-- User override defeats all dictionary matches.
+- `select-alternative` override defeats all dictionary matches and preserves dictionary provenance.
+- `replace-reading` override defeats all dictionary matches and uses `user-override` or `manual-entry` provenance.
 - Equal-length candidates resolve by non-null dictionary priority.
 - A non-null priority outranks `null` priority.
 - Equal-length and equal-priority candidates resolve by stable source order.
@@ -185,21 +184,33 @@ Verify:
 | Multiple readings with different non-null priorities | `cantonese` | `ambiguous` | Required | `highest-priority` |
 | Multiple readings with equal non-null priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
 | Multiple readings with all `null` priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
-| Multiple readings with no usable ordering | `cantonese` | `ambiguous` | `null` | `none` |
-| User override among alternatives | `cantonese` | `ambiguous` | Required | `user-override` |
+| `select-alternative` override among alternatives | `cantonese` | `ambiguous` | Required | `user-override` |
+| `replace-reading` override | `cantonese` | `ambiguous` | Required | `user-override` |
 | Cantonese text with no reading | `cantonese` | `unresolved` | `null` | `none` |
 | Passthrough text | `passthrough` | `resolved` | `null` | `none` |
+| Unsupported script | `unresolved` | `unresolved` | `null` | `none` |
 
 Additional assertions:
 
 - `selectedReading` must be non-null when `readingStatus` is `resolved`.
-- `selectedReading` may be `null` when `readingStatus` is `ambiguous` and no deterministic default exists.
+- In Milestone 1a, `selectedReading` must be non-null when `readingStatus` is `ambiguous` because stable source order always selects a default.
 - `selectedReading` must be `null` when `readingStatus` is `unresolved`.
 - `selectedReading` must be one of `alternatives` when non-null.
 - Every alternative must retain structured provenance.
 - Identical Jyutping from multiple source entry IDs must produce one alternative, not false ambiguity.
-- `finalJyutping` must be `null` when any Cantonese segment lacks a selected reading.
+- `finalJyutping` must be `null` when any segment is `unresolved` or any Cantonese segment lacks a selected reading.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
+
+## Mandatory error tests
+
+Verify:
+
+- Input longer than 100 UTF-16 code units returns `{ status: "error", error: { code: "INPUT_TOO_LONG" } }`.
+- An override with mismatched offsets or original text returns `INVALID_OVERRIDE`.
+- A `select-alternative` override referencing an unavailable reading returns `INVALID_OVERRIDE`.
+- Overlapping overrides return `OVERLAPPING_OVERRIDES`.
+- A successful conversion returns `{ status: "ok", result }`.
+- No typed exception is used for expected validation failures.
 
 ## Unit test requirements
 
@@ -215,6 +226,7 @@ Verify:
 - Emoji and supplementary-plane characters.
 - Repeated whitespace.
 - Non-Cantonese characters remain unchanged.
+- Unsupported scripts are marked unresolved.
 - UTF-16 code-unit offset correctness.
 
 ### Dictionary
@@ -239,13 +251,15 @@ Verify:
 
 Verify:
 
-- User override precedence.
+- `select-alternative` override precedence and provenance preservation.
+- `replace-reading` override precedence.
 - Whole-title exact phrase precedence.
 - Longest phrase precedence.
 - Word precedence over character fallback.
 - Character fallback.
 - Unresolved Cantonese text.
 - Passthrough text.
+- Unsupported-script text.
 - Offset correctness.
 - Deterministic tie-breaking.
 - Invalid override rejection.
@@ -255,16 +269,17 @@ Verify:
 
 Verify:
 
-- Complete `ConversionResult` structure.
+- Complete `ConversionOutcome` structure.
 - Segment coverage of all input text.
 - Correct reading selection.
 - Alternatives retention.
 - Ambiguous handling.
 - Unresolved handling.
 - Passthrough handling.
+- Unsupported-script handling.
 - Empty and whitespace-only input.
-- Input longer than 100 UTF-16 code units returns a structured validation error.
-- `finalJyutping` completeness rules.
+- Input longer than 100 UTF-16 code units returns `INPUT_TOO_LONG`.
+- `finalJyutping` completeness rules across all unresolved segments.
 - No unexpected network request.
 
 ### Formatter
@@ -274,8 +289,8 @@ Verify:
 - Tone numbers 1–6.
 - Space-separated syllables.
 - Passthrough preservation.
-- One-space boundary between Cantonese and alphanumeric passthrough.
-- No added boundary space around punctuation-only passthrough.
+- One-space boundary only between Cantonese and alphanumeric passthrough with no existing whitespace.
+- No added boundary space around punctuation-to-English boundaries.
 - Final Jyutping assembly.
 - Segment breakdown.
 - No input-character loss.
@@ -287,7 +302,7 @@ Verify:
 Verify:
 
 ```text
-input → classification → segmentation → lookup → reading selection → formatting
+input → validation → classification → segmentation → lookup → reading selection → formatting
 ```
 
 Specifically:
@@ -297,8 +312,10 @@ Specifically:
 - Character fallback.
 - Mixed Cantonese and English.
 - Ambiguous readings.
-- User overrides.
+- `select-alternative` overrides.
+- `replace-reading` overrides.
 - Unresolved text.
+- Unsupported scripts.
 - Correct final Jyutping when complete.
 - `finalJyutping: null` when incomplete.
 - Structural conformance to `docs/data-model.md`.
@@ -308,9 +325,11 @@ Specifically:
 Verify:
 
 - Pinned source files are read from `data/raw/`.
-- File presence and SHA-256 hashes are verified before parsing.
+- `data/raw/manifest.json` is read.
+- File presence, Git blob SHA, and SHA-256 hash are verified before parsing.
 - A missing raw file causes a clear failure.
-- A hash mismatch causes a clear failure.
+- A Git blob SHA mismatch causes a clear failure.
+- A SHA-256 mismatch causes a clear failure.
 - Source data is parsed without execution or evaluation.
 - Normalized JSON output is produced.
 - Required fields are validated.
@@ -364,12 +383,12 @@ Milestone 1a passes when:
 6. Every dictionary-derived result includes source provenance.
 7. Multiple distinct readings are preserved.
 8. Default selection follows the documented deterministic order.
-9. Ambiguous segments without a usable default require user selection.
-10. Matching follows the documented anchored, longest-first, tie-broken algorithm.
-11. Offsets use UTF-16 code units and refer to the original input.
-12. Non-Cantonese text is passed through unchanged.
+9. Matching follows the documented anchored, longest-first, tie-broken algorithm.
+10. Offsets use UTF-16 code units and refer to the original input.
+11. Non-Cantonese text is passed through unchanged.
+12. Unsupported scripts are marked unresolved.
 13. No input character is silently omitted.
-14. Input longer than 100 UTF-16 code units is rejected with a structured validation error.
+14. Input longer than 100 UTF-16 code units returns `INPUT_TOO_LONG`.
 15. Golden-title tests pass or explicitly document an approved limitation.
 16. The verification model finds no unresolved `BLOCKER` findings.
 17. The user manually approves linguistic results for the golden title set.
@@ -396,6 +415,7 @@ Milestone 1a passes when:
 | Offset contract | `docs/data-model.md` | Normalization and converter tests |
 | Data provenance | `docs/data-sources.md` | Dictionary, ingestion, and golden tests |
 | Result structure | `docs/data-model.md` | Converter, formatter, and type tests |
+| Error contract | `docs/data-model.md` | Converter and integration tests |
 | Tone-number output | `docs/product-brief.md` | Formatter tests |
 | Unresolved handling | `docs/product-brief.md` | Converter and golden tests |
 | Override behavior | `docs/product-brief.md` | Segmenter and integration tests |

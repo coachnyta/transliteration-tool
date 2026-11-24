@@ -36,6 +36,12 @@ type SelectionReason =
   | "none";
 
 type EntryType = "character" | "word" | "phrase";
+
+type ConversionErrorCode =
+  | "INPUT_TOO_LONG"
+  | "INVALID_OVERRIDE"
+  | "OVERLAPPING_OVERRIDES"
+  | "INVALID_INPUT";
 ```
 
 ## Reading
@@ -124,12 +130,21 @@ interface DictionaryEntry {
 ## ConversionOptions
 
 ```ts
-interface ConversionOverride {
-  startOffset: number;
-  endOffset: number;
-  originalText: string;
-  reading: Reading;
-}
+type ConversionOverride =
+  | {
+      kind: "select-alternative";
+      startOffset: number;
+      endOffset: number;
+      originalText: string;
+      readingId: string;
+    }
+  | {
+      kind: "replace-reading";
+      startOffset: number;
+      endOffset: number;
+      originalText: string;
+      reading: Reading;
+    };
 
 interface ConversionOptions {
   overrides?: ConversionOverride[];
@@ -138,20 +153,58 @@ interface ConversionOptions {
 
 | Field | Type | Required | Description | Constraints |
 |---|---|---|---|---|
+| `kind` | `"select-alternative" \| "replace-reading"` | Yes | Override operation | — |
 | `startOffset` | number | Yes | Inclusive start offset in the original input | UTF-16 code-unit index; >= 0 |
 | `endOffset` | number | Yes | Exclusive end offset in the original input | UTF-16 code-unit index; > `startOffset` |
 | `originalText` | string | Yes | Exact original text covered by the override | Must equal the input slice between the offsets |
-| `reading` | Reading | Yes | Replacement reading | Must have `source: "user-override"` or `"manual-entry"` |
+| `readingId` | string | Conditional | Existing alternative to select | Required for `select-alternative`; must match a reading in that segment’s `alternatives` |
+| `reading` | Reading | Conditional | Replacement reading | Required for `replace-reading`; must have `source: "user-override"` or `"manual-entry"` |
 | `overrides` | ConversionOverride[] | No | In-memory user overrides | Optional |
 
 Override rules:
 
-- An override must match the original input exactly at `startOffset` and `endOffset`.
+- `select-alternative` selects an existing dictionary alternative and preserves its dictionary provenance unchanged.
+- `replace-reading` supplies a new pronunciation and must use `source: "user-override"` or `"manual-entry"`.
+- Both override kinds must match the original input exactly at `startOffset` and `endOffset`.
 - `originalText` must equal the input slice between those offsets.
 - Overlapping overrides are invalid and cause a validation error.
 - A valid override takes precedence over every dictionary match.
-- An override sets `userOverride: true` and `selectionReason: "user-override"`.
+- Both override kinds set `userOverride: true` and `selectionReason: "user-override"`.
 - An override that does not match the input causes a validation error.
+
+## ConversionError and ConversionOutcome
+
+```ts
+interface ConversionError {
+  code: ConversionErrorCode;
+  message: string;
+  startOffset?: number;
+  endOffset?: number;
+}
+
+type ConversionOutcome =
+  | { status: "ok"; result: ConversionResult }
+  | { status: "error"; error: ConversionError };
+```
+
+| Field | Type | Required | Description | Constraints |
+|---|---|---|---|---|
+| `code` | ConversionErrorCode | Yes | Stable error code | One of the defined codes |
+| `message` | string | Yes | Human-readable explanation | Non-empty |
+| `startOffset` | number | No | Offset associated with the error, when applicable | UTF-16 code-unit index |
+| `endOffset` | number | No | Offset associated with the error, when applicable | UTF-16 code-unit index |
+| `status` | `"ok" \| "error"` | Yes | Outcome status | — |
+| `result` | ConversionResult | Conditional | Successful conversion result | Required when `status` is `ok` |
+| `error` | ConversionError | Conditional | Validation error | Required when `status` is `error` |
+
+Error codes:
+
+| Code | Meaning |
+|---|---|
+| `INPUT_TOO_LONG` | Input exceeds 100 UTF-16 code units |
+| `INVALID_OVERRIDE` | Override offsets or original text do not match the input, or the override references an unavailable reading |
+| `OVERLAPPING_OVERRIDES` | Two or more overrides overlap |
+| `INVALID_INPUT` | Input cannot be processed as a valid title |
 
 ## ConversionSegment
 
@@ -206,8 +259,8 @@ interface ConversionResult {
 | `originalTitle` | string | Yes | Original user input | — |
 | `normalizedTitle` | string | Yes | Normalized matching representation | May differ from original only for matching |
 | `segments` | ConversionSegment[] | Yes | Ordered conversion segments | Non-empty for non-empty input |
-| `finalJyutping` | string \| null | Conditional | Complete tone-number Jyutping | `null` unless every Cantonese segment has a selected reading |
-| `isComplete` | boolean | Yes | Whether a final Jyutping result can be produced | True only when no Cantonese segment lacks a selected reading |
+| `finalJyutping` | string \| null | Conditional | Complete tone-number Jyutping | `null` unless every segment is complete |
+| `isComplete` | boolean | Yes | Whether a final Jyutping result can be produced | True only when every Cantonese segment has a selected reading, every passthrough segment is resolved, and no segment is `unresolved` |
 | `dictionaryVersion` | string | Yes | Dictionary version or commit used | Non-empty |
 | `createdAt` | string | Yes | ISO 8601 timestamp | — |
 
@@ -224,7 +277,7 @@ interface ConversionResult {
 | `segmentType` | `readingStatus` | `selectedReading` | Meaning |
 |---|---|---|---|
 | `cantonese` | `resolved` | Required | One credible reading was found |
-| `cantonese` | `ambiguous` | Required if deterministic default exists; otherwise `null` | Multiple distinct credible readings exist |
+| `cantonese` | `ambiguous` | Required in Milestone 1a; `null` is type-legal only for forward compatibility | Multiple distinct credible readings exist; stable source order selects a default |
 | `cantonese` | `unresolved` | `null` | No credible reading was found |
 | `passthrough` | `resolved` | `null` | Non-Cantonese text intentionally unchanged |
 | `unresolved` | `unresolved` | `null` | Text could not be classified or converted |
@@ -234,12 +287,14 @@ interface ConversionResult {
 - A segment with more than one distinct Jyutping pronunciation must have `readingStatus: "ambiguous"`.
 - Multiple provenance records with the same Jyutping pronunciation must not create multiple alternatives.
 - If `readingStatus` is `resolved`, `selectedReading` must be non-null.
-- If `readingStatus` is `ambiguous` and `selectedReading` is non-null, then `selectedReading.id` must match exactly one entry in `alternatives`.
-- If `readingStatus` is `ambiguous` and no deterministic default can be selected, `selectedReading` must be `null`.
+- In Milestone 1a, if `readingStatus` is `ambiguous`, `selectedReading` must be non-null because stable source order always selects a default.
 - If `readingStatus` is `unresolved`, then `selectedReading` must be `null`.
 - A `passthrough` segment must have `readingStatus: "resolved"`, `selectedReading: null`, and `alternatives: []`.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
-- `finalJyutping` must be `null` if any Cantonese segment has `readingStatus: "unresolved"` or has no selected reading.
+- A `select-alternative` override must reference a reading already present in `alternatives` and must preserve that reading’s dictionary provenance.
+- A `replace-reading` override must use `source: "user-override"` or `"manual-entry"`.
+- `finalJyutping` must be `null` if any segment has `segmentType: "unresolved"`, any Cantonese segment has `readingStatus: "unresolved"`, or any Cantonese segment has no selected reading.
+- `isComplete` must be `false` if any of those conditions applies.
 - Every `Reading` with `source: "dictionary"` must include non-empty `provenance`.
 - A `null` priority must not outrank a non-null priority.
 

@@ -38,9 +38,9 @@ The v1 output format is tone-number Jyutping:
 
 | File | Purpose | License | Status |
 |---|---|---|---|
-| `jyut6ping3.chars.dict.yaml` | Character-level Cantonese readings | CC BY 4.0 | Approved, subject to recorded per-file hash verification |
-| `jyut6ping3.words.dict.yaml` | Word-level Cantonese readings | CC BY 4.0 | Approved, subject to recorded per-file hash verification |
-| `jyut6ping3.phrase.dict.yaml` | Phrase-level Cantonese readings | CC BY 4.0 | Approved, subject to recorded per-file hash verification |
+| `jyut6ping3.chars.dict.yaml` | Character-level Cantonese readings | CC BY 4.0 | Approved; ingestion readiness pending hash verification |
+| `jyut6ping3.words.dict.yaml` | Word-level Cantonese readings | CC BY 4.0 | Approved; ingestion readiness pending hash verification |
+| `jyut6ping3.phrase.dict.yaml` | Phrase-level Cantonese readings | CC BY 4.0 | Approved; ingestion readiness pending hash verification |
 
 ### License interpretation
 
@@ -57,20 +57,64 @@ The evidence supporting CC BY 4.0 for the three dictionary files is therefore:
 
 The files are therefore approved under CC BY 4.0, subject to the ingestion gate below.
 
+### Source integrity manifest
+
+Create `data/raw/manifest.json` with one entry per approved file:
+
+```json
+{
+  "files": [
+    {
+      "file": "jyut6ping3.chars.dict.yaml",
+      "upstreamRepository": "CanCLID/rime-cantonese-upstream",
+      "upstreamCommit": "4cb67a486312e5f0f13cc842433617104d75de87",
+      "rimeCommit": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+      "gitBlobSha": "f31eb5e66b0f26b6427306c514aa42d396c13a97",
+      "sha256": "<recorded after the raw file is committed>",
+      "license": "CC BY 4.0",
+      "ingestionReadiness": "pending-hash-verification"
+    },
+    {
+      "file": "jyut6ping3.words.dict.yaml",
+      "upstreamRepository": "CanCLID/rime-cantonese-upstream",
+      "upstreamCommit": "4cb67a486312e5f0f13cc842433617104d75de87",
+      "rimeCommit": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+      "gitBlobSha": "5e581cee9fd38e6063e0ea90bc947e9299bdc3e3",
+      "sha256": "<recorded after the raw file is committed>",
+      "license": "CC BY 4.0",
+      "ingestionReadiness": "pending-hash-verification"
+    },
+    {
+      "file": "jyut6ping3.phrase.dict.yaml",
+      "upstreamRepository": "CanCLID/rime-cantonese-upstream",
+      "upstreamCommit": "4cb67a486312e5f0f13cc842433617104d75de87",
+      "rimeCommit": "259f0e48bba840c3a2e0d117539e96937f3d89bc",
+      "gitBlobSha": "<recorded from the upstream commit>",
+      "sha256": "<recorded after the raw file is committed>",
+      "license": "CC BY 4.0",
+      "ingestionReadiness": "pending-hash-verification"
+    }
+  ]
+}
+```
+
+The Git blob SHA is recorded from the pinned upstream commit and is verifiable through the GitHub API. The SHA-256 hash must be recorded after the raw file is committed locally.
+
+A file may not be marked `ready` until both its Git blob SHA and SHA-256 hash are recorded and verified.
+
 ### Per-file verification record
 
 Before ingestion, record for each approved file:
 
 - Exact upstream repository and pinned commit
 - Exact file path
+- Exact Git blob SHA
 - Exact file SHA-256 hash
 - File header and embedded provenance metadata
 - Confirmation that the repository-level CC BY 4.0 license applies
 - Confirmation that no conflicting per-file license statement is present
 - Confirmation that the file is not part of the ODbL-licensed `jyut6ping3.maps` scope
 - Any local adaptation or transformation
-
-The ingestion script must fail clearly if a raw file is absent or its SHA-256 hash does not match the recorded hash.
 
 ### Attribution
 
@@ -92,14 +136,18 @@ Retain any copyright, disclaimer, or attribution notice supplied by the upstream
 
 The ingestion pipeline may ingest a dictionary file only after verifying:
 
-- The upstream repository and pinned commit.
-- The file exists at that commit.
-- The file SHA-256 hash matches the recorded hash.
+- The upstream repository and pinned commits.
+- The file exists in `data/raw/`.
+- The file Git blob SHA matches the recorded manifest value.
+- The file SHA-256 hash matches the recorded manifest value.
 - The repository-level CC BY 4.0 license applies.
 - No conflicting per-file license statement is present.
 - The file is not part of the ODbL-licensed `jyut6ping3.maps` scope.
+- The source-audit prerequisites that affect normalization and selection are complete.
 
 If any check fails, ingestion must stop with a clear error. It must not produce normalized output or silently skip the file.
+
+Licensing approval and ingestion readiness are separate states. A file may be licensing-approved while its ingestion readiness remains `pending-hash-verification`.
 
 ## Files explicitly excluded
 
@@ -111,18 +159,18 @@ If any check fails, ingestion must stop with a clear error. It must not produce 
 
 ## Source audit
 
-The following source characteristics must be verified from the pinned commit before finalizing normalization and deduplication behavior.
+The following source characteristics must be verified from the pinned commit before ingestion readiness is granted. They are ingestion-readiness prerequisites, not licensing prerequisites.
 
 | Characteristic | Status | Decision |
 |---|---|---|
-| Traditional Chinese coverage | `TODO: audit` | Record after audit |
-| Simplified Chinese coverage | `TODO: audit` | Record after audit |
-| Multiple readings per entry | `TODO: audit` | Retain all distinct readings |
-| Duplicate entries | `TODO: audit` | Deduplicate exact duplicates; retain distinct readings |
-| Missing required fields | `TODO: audit` | Reject or quarantine with reason |
-| Frequency or priority data | `TODO: audit` | Use only if present and reliable; otherwise use `null` |
-| Phrase coverage | `TODO: audit` | Record after audit |
-| Proper-noun coverage | `TODO: audit` | Record after audit |
+| Traditional Chinese coverage | `TODO: ingestion-readiness prerequisite` | Record after audit |
+| Simplified Chinese coverage | `TODO: ingestion-readiness prerequisite` | Record after audit |
+| Multiple readings per entry | `TODO: ingestion-readiness prerequisite` | Retain all distinct readings |
+| Duplicate entries | `TODO: ingestion-readiness prerequisite` | Deduplicate exact duplicates; retain distinct readings |
+| Missing required fields | `TODO: ingestion-readiness prerequisite` | Reject or quarantine with reason |
+| Frequency or priority data | `TODO: ingestion-readiness prerequisite` | Use only if present and reliable; otherwise use `null` |
+| Phrase coverage | `TODO: ingestion-readiness prerequisite` | Record after audit |
+| Proper-noun coverage | `TODO: ingestion-readiness prerequisite` | Record after audit |
 
 ### Duplicate and conflict policy
 
@@ -164,7 +212,12 @@ Record observed coverage after ingestion. Do not state coverage as fact until th
 
 Raw dictionary files must be committed to `data/raw/` at the pinned commits. The ingestion pipeline must not download files at runtime.
 
-Before ingestion, the pipeline must verify the SHA-256 hash of every raw file against a recorded manifest. A missing file or hash mismatch must cause a clear ingestion failure.
+Before ingestion, the pipeline must verify each raw file against `data/raw/manifest.json`:
+
+- The Git blob SHA recorded from the pinned upstream commit.
+- The SHA-256 hash recorded after the raw file is committed locally.
+
+A missing file or integrity mismatch must cause a clear ingestion failure.
 
 ### Output
 
@@ -178,7 +231,7 @@ data/normalized/
 
 ```text
 Rime-Cantonese YAML
-→ verify file presence and SHA-256 hash
+→ verify file presence, Git blob SHA, and SHA-256 hash
 → parse
 → validate
 → normalize
@@ -190,7 +243,7 @@ Rime-Cantonese YAML
 → generate ingestion report
 ```
 
-The proposed YAML parser is `yaml`. Its exact version and license must be listed and approved before installation. The parser must be used only to parse structured YAML data; it must not execute, evaluate, or interpret source content as code.
+The proposed YAML parser is `yaml` version `2.9.1`, licensed ISC. It is a runtime dependency for ingestion only. The parser must be used only to parse structured YAML data; it must not execute, evaluate, or interpret source content as code.
 
 ### Normalized record requirements
 
@@ -229,7 +282,7 @@ The ingestion report must record:
 
 - Source repository and pinned commits
 - Files processed
-- File SHA-256 hashes and verification results
+- Git blob SHA and SHA-256 verification results
 - Entries read
 - Entries accepted
 - Entries rejected or quarantined
@@ -284,7 +337,7 @@ To update the dictionary:
 1. Select a new upstream commit.
 2. Review the diff and any license changes.
 3. Update the pinned commits and accessed date in this document.
-4. Update the recorded file hashes.
+4. Update the recorded Git blob SHAs and SHA-256 hashes.
 5. Run the ingestion pipeline.
 6. Review the ingestion report.
 7. Run all automated tests.
@@ -304,3 +357,4 @@ Do not automatically update dictionary data without review.
 - `docs/decisions/0001-use-rime-cantonese.md`
 - `docs/decisions/0002-exclude-jyut6ping3-maps.md`
 - `docs/decisions/0003-ambiguity-representation.md`
+- `docs/decisions/0004-verify-rime-cantonese-dictionary-licensing.md`

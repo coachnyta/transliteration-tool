@@ -12,12 +12,13 @@ This document defines the deterministic behavior of the Cantonese-to-Jyutping co
 
 ```text
 input title
+→ validate input and overrides
 → classify characters
 → segment using original input offsets
 → dictionary lookup
 → select reading
 → format Jyutping
-→ return structured result
+→ return ConversionOutcome
 ```
 
 ## Input contract
@@ -26,7 +27,9 @@ input title
 - The original input must not be mutated.
 - All segment offsets refer to the original input using UTF-16 code-unit indices.
 - The maximum supported title length is 100 UTF-16 code units.
-- Input longer than 100 UTF-16 code units must return a structured validation error; it must not be silently truncated.
+- Input longer than 100 UTF-16 code units returns `{ status: "error", error: { code: "INPUT_TOO_LONG" } }`.
+- Invalid overrides return `{ status: "error", error: { code: "INVALID_OVERRIDE" } }`.
+- Overlapping overrides return `{ status: "error", error: { code: "OVERLAPPING_OVERRIDES" } }`.
 - Normalization may create a separate normalized matching representation, but must not change original offsets.
 - The converter must not make unexpected network requests.
 - The converter must not execute or evaluate input as code.
@@ -42,7 +45,9 @@ Classify each character as:
 - Whitespace
 - Unsupported script
 
-Non-Cantonese characters must be preserved unchanged.
+Latin letters, digits, punctuation, and whitespace are non-Cantonese text and must pass through unchanged.
+
+Unsupported scripts—for example Korean Hangul, Japanese kana, or other non-Cantonese CJK scripts—are marked `segmentType: "unresolved"` and `readingStatus: "unresolved"`. They must remain visible and prevent a complete final Jyutping result.
 
 ## Matching algorithm
 
@@ -50,17 +55,18 @@ Matching is performed at the current input offset.
 
 At each offset:
 
-1. If a user override exists for this exact segment, apply it.
-2. If the entire normalized title exactly matches one dictionary phrase, use that phrase.
-3. Otherwise, find all dictionary phrase candidates that begin at the current offset.
-4. Select the candidate with the greatest phrase length.
-5. If multiple candidates have the same length, select the candidate with the highest non-null dictionary priority.
-6. If multiple candidates have the same length and equal non-null priority, select the candidate with the lowest source entry ID.
-7. If source entry IDs are equal or unavailable, use stable source order.
-8. If no phrase candidate exists, find word candidates beginning at the current offset and apply the same length, priority, and stable-order rules.
-9. If no word candidate exists, attempt character-level lookup.
-10. If no character reading exists, mark the Cantonese text unresolved.
-11. Advance to the end of the selected segment and repeat.
+1. If a `select-alternative` override exists for this exact segment, select the referenced existing alternative.
+2. If a `replace-reading` override exists for this exact segment, use the supplied replacement reading.
+3. If the entire normalized title exactly matches one dictionary phrase, use that phrase.
+4. Otherwise, find all dictionary phrase candidates that begin at the current offset.
+5. Select the candidate with the greatest phrase length.
+6. If multiple candidates have the same length, select the candidate with the highest non-null dictionary priority.
+7. If multiple candidates have the same length and equal non-null priority, select the candidate with the lowest source entry ID.
+8. If source entry IDs are equal or unavailable, use stable source order.
+9. If no phrase candidate exists, find word candidates beginning at the current offset and apply the same length, priority, and stable-order rules.
+10. If no word candidate exists, attempt character-level lookup.
+11. If no character reading exists, mark the Cantonese text unresolved.
+12. Advance to the end of the selected segment and repeat.
 
 ### Match precedence
 
@@ -92,7 +98,10 @@ Selection order:
 2. If the dictionary entry explicitly marks one reading as default or primary, use that reading.
 3. If one or more readings have a non-null priority or frequency value, use the reading with the highest non-null value.
 4. If all candidate readings have `null` priority, use stable source order.
-5. If no deterministic order can be established, do not select a default. Mark the segment `ambiguous`, set `selectedReading` to `null`, and require user selection before producing a final Jyutping result.
+
+Stable source order always provides a deterministic default. Therefore, in Milestone 1a, an `ambiguous` segment always has a non-null `selectedReading`.
+
+`selectedReading: null` remains type-legal for an `ambiguous` segment only as a forward-compatible state; no Milestone 1a conversion path produces it.
 
 A `null` priority means that the source provides no usable priority or frequency value. It must not be assigned an arbitrary numeric default.
 
@@ -109,33 +118,33 @@ This ordering must be deterministic across ingestion runs. It must not depend on
 
 | Value | Meaning |
 |---|---|
-| `user-override` | The user explicitly selected the reading |
+| `user-override` | The user explicitly selected or replaced the reading |
 | `dictionary-default` | The source marked the reading as default or primary |
 | `highest-priority` | The reading had the highest available non-null priority or frequency |
 | `stable-source-order` | Equal or missing priorities were resolved using stable source order |
-| `none` | No default could be selected; user decision required |
+| `none` | No default could be selected; not produced by Milestone 1a rules |
 
 ## Ambiguity policy
 
 - A segment with exactly one distinct credible Jyutping pronunciation is `resolved`.
 - A segment with more than one distinct credible Jyutping pronunciation is `ambiguous`.
 - Multiple provenance records with the same Jyutping pronunciation must be merged into one reading and must not create ambiguity.
-- An ambiguous segment may still have a `selectedReading` if a deterministic default exists.
-- An ambiguous segment without a deterministic default has `selectedReading: null`.
+- In Milestone 1a, an ambiguous segment always has a non-null `selectedReading` because stable source order selects a default.
+- `selectedReading: null` for an ambiguous segment is type-legal only for forward compatibility.
 - Ambiguity does not change `segmentType`; it is represented by `readingStatus`.
 - The selected reading must be one of the entries in `alternatives` when it exists.
 - Every distinct alternative retains structured provenance for every supporting source entry.
 
 ## Non-Cantonese text
 
-- Latin letters, digits, punctuation, and unsupported scripts pass through unchanged.
+- Latin letters, digits, punctuation, and whitespace pass through unchanged.
 - Mark them as `segmentType: "passthrough"`.
 - Set `readingStatus: "resolved"`, `selectedReading: null`, and `alternatives: []`.
 
 ## Unresolved text
 
 - Cantonese text with no credible dictionary reading is marked `segmentType: "cantonese"` and `readingStatus: "unresolved"`.
-- Text that cannot be classified or converted is marked `segmentType: "unresolved"` and `readingStatus: "unresolved"`.
+- Unsupported scripts are marked `segmentType: "unresolved"` and `readingStatus: "unresolved"`.
 - Unresolved text must remain visible in the result.
 - Unresolved text must not be silently omitted.
 
@@ -143,13 +152,12 @@ This ordering must be deterministic across ingestion runs. It must not depend on
 
 - Use tone numbers 1 through 6.
 - Separate Jyutping syllables with a single space.
-- Preserve non-Cantonese passthrough text unchanged.
-- Concatenate converted and passthrough segments in original order without adding separators, except for the boundary rule below.
-- Insert exactly one space at a boundary between a Cantonese segment and an adjacent passthrough segment that contains at least one letter or digit.
-- Do not insert a space before or after a punctuation-only passthrough segment.
-- Normalize an existing boundary whitespace sequence to exactly one space when the boundary rule applies.
-- Produce `finalJyutping` only when every Cantonese segment has a selected reading.
-- If any Cantonese segment lacks a selected reading, set `finalJyutping` to `null` and `isComplete` to `false`.
+- Preserve non-Cantonese passthrough text and original whitespace exactly.
+- Concatenate converted and passthrough segments in original order.
+- If a Cantonese segment is directly adjacent to an alphanumeric passthrough segment and there is no whitespace between them, insert exactly one space.
+- Do not insert or normalize whitespace at passthrough-to-passthrough boundaries, including punctuation-to-English boundaries.
+- Produce `finalJyutping` only when every Cantonese segment has a selected reading, every passthrough segment is resolved, and no segment is `unresolved`.
+- Otherwise, set `finalJyutping` to `null` and `isComplete` to `false`.
 
 Examples, using validated dictionary readings for `<jyutping>`:
 
@@ -157,9 +165,9 @@ Examples, using validated dictionary readings for `<jyutping>`:
 |---|---|
 | `中文English中文` | `<jyutping> English <jyutping>` |
 | `中文 English 中文` | `<jyutping> English <jyutping>` |
+| `中文。English` | `<jyutping>。English` |
+| `中文。 English` | `<jyutping>。 English` |
 | `中文123中文` | `<jyutping> 123 <jyutping>` |
-| `中文。English` | `<jyutping>。 English` |
-| `English中文` | `English <jyutping>` |
 | `中文。` | `<jyutping>。` |
 
 ## User overrides
@@ -167,7 +175,19 @@ Examples, using validated dictionary readings for `<jyutping>`:
 - A user override always takes precedence over dictionary output for that segment.
 - A user override must preserve the original segment and its offset.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
+- `select-alternative` selects an existing dictionary alternative and preserves its dictionary provenance.
+- `replace-reading` supplies a new pronunciation with `source: "user-override"` or `"manual-entry"`.
 - In Milestone 1a, overrides are supplied through the `ConversionOptions.overrides` array.
 - Overrides must match the original input exactly at their declared UTF-16 offsets.
-- Overlapping overrides are invalid and cause a validation error.
+- Overlapping overrides are invalid and return `OVERLAPPING_OVERRIDES`.
 - Persistent override storage is not required.
+
+## Completeness
+
+`isComplete` is true only when:
+
+- Every Cantonese segment has a selected reading.
+- Every passthrough segment is resolved.
+- No segment has `segmentType: "unresolved"`.
+
+`finalJyutping` is `null` if any of those conditions fails.

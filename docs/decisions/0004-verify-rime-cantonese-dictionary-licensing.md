@@ -16,7 +16,7 @@ The upstream repository contains a repository-level CC BY 4.0 `LICENSE` file at 
 
 ## Decision
 
-Treat `jyut6ping3.chars.dict.yaml`, `jyut6ping3.words.dict.yaml`, and `jyut6ping3.phrase.dict.yaml` as CC BY 4.0, subject to recorded per-file SHA-256 hash verification before ingestion.
+Treat `jyut6ping3.chars.dict.yaml`, `jyut6ping3.words.dict.yaml`, and `jyut6ping3.phrase.dict.yaml` as CC BY 4.0, subject to recorded per-file integrity verification before ingestion.
 
 Exclude `jyut6ping3.maps.dict.yaml` because it is ODbL 1.0 and outside Milestone 1a scope.
 
@@ -36,17 +36,41 @@ The evidence chain is:
 4. The three dictionary files are not part of the explicitly ODbL-licensed `jyut6ping3.maps` scope.
 5. No conflicting per-file license statement has been identified in the dictionary file headers.
 
+## Source integrity manifest
+
+Create `data/raw/manifest.json` with one entry per approved file. Each entry must record:
+
+- File name
+- Upstream repository and pinned commit
+- Rime-Cantonese pinned commit
+- Git blob SHA
+- SHA-256 hash
+- License
+- Ingestion-readiness status
+
+Known Git blob SHAs:
+
+- `jyut6ping3.chars.dict.yaml`: `f31eb5e66b0f26b6427306c514aa42d396c13a97`
+- `jyut6ping3.words.dict.yaml`: `5e581cee9fd38e6063e0ea90bc947e9299bdc3e3`
+- `jyut6ping3.phrase.dict.yaml`: to be recorded from the pinned upstream commit
+
+The SHA-256 hash is recorded after the raw file is committed locally. A file may not be marked `ready` until both its Git blob SHA and SHA-256 hash are recorded and verified.
+
 ## Ingestion requirements
 
 Before ingestion, the pipeline must verify for each dictionary file:
 
 - The file exists in `data/raw/`.
-- The file SHA-256 hash matches the recorded hash.
-- The upstream repository and pinned commit are recorded.
+- The file Git blob SHA matches the recorded manifest value.
+- The file SHA-256 hash matches the recorded manifest value.
+- The upstream repository and pinned commits are recorded.
 - No conflicting per-file license statement is present.
 - The file is not part of the ODbL-licensed `jyut6ping3.maps` scope.
+- The source-audit prerequisites that affect normalization and selection are complete.
 
-A missing file or hash mismatch must stop ingestion with a clear error. Ingestion must not produce normalized output or silently skip a file.
+A missing file or integrity mismatch must stop ingestion with a clear error. Ingestion must not produce normalized output or silently skip a file.
+
+Licensing approval and ingestion readiness are separate states.
 
 ## Attribution
 
@@ -62,16 +86,16 @@ When dictionary-derived material is shared, use attribution that includes:
 ## Alternatives considered
 
 - Treat the files as approved solely from the Rime-Cantonese README
-  - Why not: Repository-level README evidence alone does not document the per-file evidence and hash-verification gate.
+  - Why not: Repository-level README evidence alone does not document the per-file evidence and integrity-verification gate.
 - Treat the files as pending verification indefinitely
-  - Why not: The upstream license and source provenance provide sufficient evidence to support CC BY 4.0, provided the per-file hashes and ingestion checks are recorded.
+  - Why not: The upstream license and source provenance provide sufficient evidence to support CC BY 4.0, provided the per-file integrity checks are recorded.
 - Include `jyut6ping3.maps.dict.yaml`
   - Why not: It is ODbL 1.0 and its input-method and reverse-lookup features are outside Milestone 1a scope; see ADR 0002.
 
 ## Consequences
 
 - The licensing decision is explicit, evidence-backed, and mechanically checkable.
-- Ingestion is gated on per-file hash verification.
+- Ingestion is gated on Git blob SHA and SHA-256 verification.
 - Attribution remains required when dictionary-derived material is shared.
 - Future dictionary updates require review of upstream license changes, updated hashes, and updated attribution.
 
