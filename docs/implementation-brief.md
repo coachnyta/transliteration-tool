@@ -2,21 +2,11 @@
 
 ## Status
 
-Draft for review.
+Approved for implementation planning.
 
 ## Objective
 
-Implement the framework-agnostic Cantonese-to-Jyutping conversion core and
-the Rime-Cantonese data-ingestion pipeline.
-
-This milestone must produce a local, testable TypeScript module that can:
-
-1. Ingest and normalize a pinned Rime-Cantonese dataset.
-2. Look up Cantonese text using exact-phrase, longest-phrase, word, and
-   character-level matching.
-3. Return structured conversion results with selected readings,
-   alternatives, provenance, confidence, and unresolved indicators.
-4. Format Cantonese readings as tone-number Jyutping.
+Implement the framework-agnostic Cantonese-to-Jyutping conversion core and Rime-Cantonese data-ingestion pipeline.
 
 No user interface is included in this milestone.
 
@@ -30,15 +20,14 @@ No user interface is included in this milestone.
 - Normalized character, word, and phrase dictionary data.
 - Dictionary lookup and segmentation.
 - Multiple-reading preservation.
+- Deterministic default-reading selection.
 - Tone-number Jyutping formatting.
 - Non-Cantonese passthrough handling.
 - Unresolved-text handling.
-- Unit and integration tests.
+- Unit, integration, ingestion, and type tests.
 - Documentation updates required by implementation findings.
 
 ### Out of scope
-
-Do not implement any of the following in Milestone 1a:
 
 - React, Vite, or any browser UI.
 - Mandarin, Japanese, Korean, Taiwanese, or other languages.
@@ -46,12 +35,27 @@ Do not implement any of the following in Milestone 1a:
 - External LLM APIs.
 - Cloud storage, accounts, authentication, or synchronization.
 - Global dictionary overrides.
+- Persistent title library.
+- Persistent correction storage.
+- JSON import/export.
 - Tone-mark Jyutping output.
 - Batch file conversion.
 - File upload or download.
 - Browser extension.
 - Deployment infrastructure.
 - Performance optimization beyond reasonable local lookup speed.
+
+## Deferred product-level acceptance criteria
+
+The following are part of the eventual v1 product, but are explicitly deferred beyond Milestone 1a:
+
+- Persistent local title library.
+- Persistent correction storage.
+- JSON export and import.
+- Browser UI correction workflow.
+- End-to-end persistence tests.
+
+Milestone 1a may represent overrides in memory, but must not implement persistence.
 
 ## Source of truth
 
@@ -63,8 +67,7 @@ The following documents define the product and implementation requirements:
 - `docs/data-model.md`
 - `docs/test-plan.md`
 
-If these documents conflict, stop and ask the user. Do not resolve a conflict
-by silently choosing an interpretation.
+If these documents conflict, stop and ask the user. Do not resolve a conflict by silently choosing an interpretation.
 
 ## Technical constraints
 
@@ -72,27 +75,28 @@ by silently choosing an interpretation.
 - Keep conversion logic independent of React, the DOM, and browser-only APIs.
 - Use Node.js-compatible TypeScript for the ingestion pipeline.
 - Do not add a dependency without explicit user approval.
-- Use only the pinned Rime-Cantonese commit and files listed in
-  `docs/data-sources.md`.
+- Use only Rime-Cantonese commit `259f0e48bba840c3a2e0d117539e96937f3d89bc`.
+- Use only the files approved in `docs/data-sources.md`.
 - Do not fetch dictionary data at runtime.
 - Do not invent Jyutping readings, dictionary entries, or test expectations.
 - Preserve source provenance for every dictionary-derived result.
-- Treat malformed, incomplete, or conflicting source entries as validation
-  failures or quarantined records; do not silently discard them.
+- Treat malformed, incomplete, or conflicting source entries as validation failures or quarantined records; do not silently discard them.
+
+## Security and integrity
+
+- Treat conversion input as untrusted text.
+- Do not execute, evaluate, or interpret input or source data as code.
+- Do not use `eval`, `Function`, or equivalent dynamic code execution.
+- Do not make unexpected network requests during conversion.
+- Pin all dependencies and review lockfile changes.
+- The ingestion script must not overwrite source files or unrelated repository content.
+- The ingestion script may write only to its designated output directory and report file.
 
 ## Repository structure
-
-Use this initial structure:
 
 ```text
 .
 ├── docs/
-│   ├── product-brief.md
-│   ├── data-sources.md
-│   ├── conversion-rules.md
-│   ├── data-model.md
-│   ├── implementation-brief.md
-│   └── test-plan.md
 ├── scripts/
 │   └── ingest-rime-cantonese.ts
 ├── src/
@@ -109,21 +113,13 @@ Use this initial structure:
 │   └── normalized/
 ├── tests/
 │   ├── unit/
-│   └── integration/
+│   ├── integration/
+│   ├── fixtures/
+│   └── golden/
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
-
-Notes:
-
-- `src/cantonese/` contains only the conversion core.
-- `scripts/` contains the ingestion pipeline.
-- `data/raw/` may contain source-derived or downloaded data only if permitted
-  by the applicable license and repository policy.
-- `data/normalized/` contains generated, validated, normalized data.
-- Generated data must be reproducible from the pinned source commit.
-- Do not place React code in this milestone.
 
 ## Required modules
 
@@ -131,18 +127,21 @@ Notes:
 
 Create `src/cantonese/types.ts`.
 
-It must export types consistent with `docs/data-model.md`, including at least:
+Export the complete public contract defined in `docs/data-model.md`:
 
+- `SegmentType`
+- `ReadingStatus`
+- `ReadingSource`
+- `SelectionReason`
+- `EntryType`
+- `JyutpingSyllable`
+- `Reading`
 - `DictionaryEntry`
 - `ConversionSegment`
 - `ConversionResult`
-- `SegmentType`
-- `ReadingSource`
-- `Confidence`
-- `JyutpingSyllable`
+- `ConversionOptions`
 
-Do not duplicate type definitions across modules. Import shared types from
-`types.ts`.
+Do not duplicate type definitions across modules.
 
 ### Normalization
 
@@ -150,12 +149,11 @@ Create `src/cantonese/normalize.ts`.
 
 It must:
 
-- Normalize whitespace in a predictable way.
-- Preserve the original input text for display and offset calculation.
-- Classify characters into Cantonese Han characters, Latin letters, digits,
-  punctuation, whitespace, and unsupported scripts.
-- Detect Traditional and Simplified Chinese according to the coverage recorded
-  in `docs/data-sources.md`.
+- Preserve the original input unchanged.
+- Create a separate normalized matching representation when needed.
+- Classify Cantonese Han characters, Latin letters, digits, punctuation, whitespace, and unsupported scripts.
+- Use UTF-16 code-unit offsets into the original input.
+- Handle Traditional and Simplified Chinese according to the source-data audit.
 - Not alter non-Cantonese characters.
 
 ### Dictionary
@@ -165,37 +163,24 @@ Create `src/cantonese/dictionary.ts`.
 It must:
 
 - Load normalized dictionary data.
-- Support exact lookup by character, word, and phrase.
-- Support longest-match lookup beginning at a given text offset.
-- Return all relevant readings for a matched entry.
-- Preserve entry source, source entry ID, entry type, and priority.
-- Expose a deterministic ordering rule for equally ranked matches.
-
-The dictionary implementation must not depend on React or browser APIs.
+- Support exact whole-title phrase lookup.
+- Support longest-match lookup beginning at a given UTF-16 code-unit offset.
+- Support word and character lookup.
+- Return all relevant readings as structured `Reading` objects.
+- Preserve entry source, source entry ID, source version, and priority.
+- Implement deterministic tie-breaking.
 
 ### Segmenter
 
 Create `src/cantonese/segmenter.ts`.
 
-It must implement the conversion priority defined in
-`docs/conversion-rules.md`:
-
-1. User override.
-2. Exact phrase match.
-3. Longest phrase match.
-4. Word match.
-5. Character fallback.
-6. Unresolved.
-
-For Milestone 1a, user overrides may be represented as an input parameter or
-in-memory override collection. Persistent override storage is not required.
+Implement the matching algorithm and precedence rules in `docs/conversion-rules.md`.
 
 ### Converter
 
 Create `src/cantonese/converter.ts`.
 
-It must expose a single primary conversion function with an interface
-equivalent to:
+Expose:
 
 ```ts
 convertCantoneseTitle(
@@ -206,11 +191,11 @@ convertCantoneseTitle(
 
 It must:
 
-- Accept a short Cantonese title.
 - Return a `ConversionResult` conforming to `docs/data-model.md`.
 - Produce one segment for each recognized unit.
-- Preserve offsets relative to the original input.
-- Return alternatives when a dictionary entry has multiple readings.
+- Preserve UTF-16 code-unit offsets relative to the original input.
+- Return alternatives as structured `Reading[]`.
+- Apply deterministic default-reading selection.
 - Mark unmatched Cantonese text as unresolved.
 - Mark non-Cantonese text as passthrough.
 - Never silently omit input characters.
@@ -222,27 +207,26 @@ Create `src/cantonese/formatter.ts`.
 It must:
 
 - Format selected Jyutping readings using tone numbers 1–6.
-- Separate Jyutping syllables with a single space.
+- Separate Jyutping syllables with single spaces.
 - Preserve non-Cantonese passthrough text unchanged.
-- Produce a final Jyutping string for the full title.
-- Provide a segment-level breakdown suitable for UI rendering in a later
-  milestone.
+- Produce `finalJyutping` only when every Cantonese segment has a selected reading.
+- Provide a segment-level breakdown suitable for later UI rendering.
 
 ## Data ingestion
 
 Create `scripts/ingest-rime-cantonese.ts`.
 
-The script must:
+It must:
 
-1. Read the Rime-Cantonese files and pinned commit recorded in
-   `docs/data-sources.md`.
-2. Parse the source data.
+1. Read the pinned Rime-Cantonese files from `data/raw/`.
+2. Parse the source data without executing or evaluating it.
 3. Validate every entry.
 4. Normalize entries into the internal data model.
-5. Deduplicate or explicitly retain duplicate readings according to
-   `docs/data-sources.md` and `docs/conversion-rules.md`.
-6. Write normalized output to `data/normalized/`.
-7. Emit a machine-readable ingestion report.
+5. Collapse exact duplicates.
+6. Retain distinct readings.
+7. Build lookup indexes.
+8. Write normalized JSON output to `data/normalized/`.
+9. Emit a machine-readable ingestion report.
 
 The ingestion report must include:
 
@@ -251,93 +235,64 @@ The ingestion report must include:
 - Entries read
 - Entries accepted
 - Entries rejected or quarantined
+- Exact duplicates collapsed
+- Distinct readings retained
 - Duplicate or conflicting entries
 - Character, word, and phrase counts
 - Validation errors
 - Output file paths
 - Ingestion timestamp
 
-The script must be rerunnable and must produce deterministic output for the
-same pinned input and configuration.
-
 ## Validation rules
 
-The ingestion pipeline must validate:
+Validate:
 
-- Required fields are present.
-- Jyutping syllables use valid Jyutping structure.
-- Tone numbers are integers from 1 through 6.
-- Entries have a source and source entry identifier.
-- Character, word, and phrase entries are distinguishable.
-- Traditional and Simplified forms are handled according to the source-data
-  audit.
-- Multiple readings are retained.
-- Duplicate entries are detected and handled deterministically.
-- Invalid records are rejected or quarantined with a clear reason.
-
-Do not use regular expressions as the sole validation mechanism for Jyutping
-if a more reliable validation approach is available.
-
-## Error handling
-
-The conversion core must:
-
-- Return a structured unresolved result rather than throwing for ordinary
-  unknown text.
-- Clearly distinguish:
-  - `unresolved`: Cantonese text with no dictionary reading
-  - `passthrough`: non-Cantonese text intentionally left unchanged
-  - `ambiguous`: multiple plausible readings exist
-- Include enough information for a future UI to display alternatives and
-  corrections.
-
-The ingestion script must:
-
-- Fail with a clear error for invalid configuration or missing source files.
-- Report invalid data entries rather than silently skipping them.
-- Exit nonzero when validation failures prevent production of a trustworthy
-  normalized dataset.
-
-## Testing requirements
-
-Write tests before or alongside implementation. Tests must cover:
-
-- Jyutping formatting and tone-number validation.
-- Character classification.
-- Normalization.
-- Exact phrase matching.
-- Longest-match behavior.
-- Word matching.
-- Character fallback.
+- Required fields.
+- Jyutping syllable structure.
+- Tone numbers from 1 through 6.
+- Source and source entry identifier.
+- Entry type.
+- Traditional and Simplified handling.
 - Multiple readings.
-- Unresolved Cantonese text.
-- Non-Cantonese passthrough.
-- Offset correctness.
-- Override precedence.
-- Dictionary-source provenance.
-- Ingestion validation and error reporting.
+- Exact duplicates and distinct readings.
+- Invalid records.
 
-Use a small fixture dictionary for unit tests. Do not depend on the full
-Rime-Cantonese dataset for every unit test.
+Do not silently discard malformed records.
 
-Integration tests may use a small, curated subset of normalized data or mocked
-dictionary data, provided the test purpose and limitations are documented.
+## Tooling and dependencies
+
+Before installation, the implementation plan must list every proposed dependency with:
+
+- Package name
+- Exact version or version range
+- Purpose
+- License
+- Whether it is a runtime, development, or test dependency
+
+Proposed tooling, subject to user approval:
+
+| Package | Purpose | Proposed status |
+|---|---|---|
+| `typescript` | TypeScript compiler and type checking | Development dependency |
+| `vitest` | Unit, integration, and ingestion tests | Development dependency |
+| `eslint` | Linting | Development dependency |
+| `typescript-eslint` | TypeScript-aware linting | Development dependency |
+
+Do not install any dependency until the user approves the exact list.
 
 ## Verification commands
 
-The implementation must include npm scripts for at least:
+Provide npm scripts for:
 
 ```bash
 npm run typecheck
 npm run lint
 npm run test
+npm run test:coverage
 npm run ingest:data
 ```
 
-The implementation is not complete unless all applicable commands pass.
-
-If a command is not applicable, explain why in the final report rather than
-removing it silently.
+All applicable commands must pass.
 
 ## Definition of done
 
@@ -346,56 +301,16 @@ Milestone 1a is complete when:
 - The pinned Rime-Cantonese data can be ingested reproducibly.
 - The normalized dictionary is validated and contains provenance metadata.
 - The conversion core produces structured results for test titles.
-- Phrase, word, and character lookup follow the documented priority order.
+- Phrase, word, and character lookup follow the documented matching algorithm.
 - Multiple readings are preserved and exposed.
+- Default reading selection is deterministic.
+- Ambiguous segments without a usable default require user selection.
 - Non-Cantonese text is passed through unchanged.
 - Unresolved Cantonese text is clearly identified.
 - Tone-number Jyutping is formatted consistently.
-- All required tests, type checks, and lint checks pass.
-- No UI, other-language, ML, or LLM functionality has been added.
+- All required tests, type checks, lint checks, and coverage reporting pass.
+- No UI, other-language, ML, LLM, persistence, or import/export functionality has been added.
 - Documentation accurately reflects the implemented behavior.
-
-## Deliverables
-
-The final pull request or change set must include:
-
-- TypeScript conversion core.
-- Ingestion script.
-- Normalized data-generation capability.
-- Tests.
-- Updated documentation where needed.
-- A concise implementation report.
-
-## Implementation report format
-
-At the end of the milestone, provide:
-
-```md
-## Implementation Report
-
-### Files changed
-- List every created or modified file.
-
-### Dependencies added
-- List every dependency, version, purpose, and license.
-
-### Data processed
-- Source repository and pinned commit
-- Files processed
-- Entry counts by type
-- Validation failures
-- Output files
-
-### Tests
-- List test files and describe coverage.
-- Include the exact commands run and their results.
-
-### Known limitations
-- List known gaps, unresolved design questions, and deferred work.
-
-### Deviations
-- List every deviation from the planning documents, with justification.
-```
 
 ## Approval gate
 
@@ -403,7 +318,7 @@ Before writing implementation code, present:
 
 1. A concise implementation plan.
 2. The exact files to create or modify.
-3. Dependencies to add, if any.
+3. Every proposed dependency, version, purpose, and license.
 4. The test strategy.
 5. Any ambiguities, conflicts, or missing decisions.
 
