@@ -148,7 +148,7 @@ This ordering must be deterministic across ingestion runs. It must not depend on
 - In Milestone 1a, an ambiguous segment always has a non-null `selectedReading` because stable source order selects a default.
 - `selectedReading: null` for an ambiguous segment is type-legal only for forward compatibility.
 - Ambiguity does not change `segmentType`; it is represented by `readingStatus`.
-- The selected reading must be one of the entries in `alternatives` when it exists.
+- `selectedReading` must either be an entry in `alternatives` or have a Jyutping pronunciation identical to an entry in `alternatives`.
 - Every distinct alternative retains structured provenance for every supporting source entry.
 
 ## Non-Cantonese text

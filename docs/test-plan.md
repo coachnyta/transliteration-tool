@@ -62,7 +62,7 @@ Use the tools approved in the implementation plan.
 
 Runtime requirement:
 
-- Node.js: `^22.13.0 || >=24.0.0`
+- Node.js: `^22.13.0 || ^24.0.0 || >=26.0.0`
 
 Approved dependency versions and licenses:
 
@@ -200,7 +200,7 @@ Additional assertions:
 - `selectedReading` must be non-null when `readingStatus` is `resolved`.
 - In Milestone 1a, `selectedReading` must be non-null when `readingStatus` is `ambiguous` because stable source order always selects a default.
 - `selectedReading` must be `null` when `readingStatus` is `unresolved`.
-- `selectedReading` must be one of `alternatives` when non-null.
+- `selectedReading` must either be an entry in `alternatives` or have a Jyutping pronunciation identical to an entry in `alternatives`.
 - Every alternative must retain structured provenance.
 - Identical Jyutping from multiple source entry IDs must produce one alternative, not false ambiguity.
 - A distinct replacement reading must be added to `alternatives`.

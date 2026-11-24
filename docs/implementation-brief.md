@@ -72,7 +72,7 @@ If these documents conflict, stop and ask the user. Do not resolve a conflict by
 ## Technical constraints
 
 - Use TypeScript with strict mode enabled.
-- Require Node.js `^22.13.0 || >=24.0.0`.
+- Require Node.js `^22.13.0 || ^24.0.0 || >=26.0.0`.
 - Use the same Node.js major version in local development and CI.
 - Keep conversion logic independent of React, the DOM, and browser-only APIs.
 - Use Node.js-compatible TypeScript for the ingestion pipeline.
@@ -293,7 +293,7 @@ The following is the exact proposed dependency list. Do not install any dependen
 
 Runtime requirement:
 
-- Node.js: `^22.13.0 || >=24.0.0`
+- Node.js: `^22.13.0 || ^24.0.0 || >=26.0.0`
 
 | Package | Version | License | Classification | Purpose |
 |---|---:|---|---|---|

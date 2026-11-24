@@ -178,7 +178,7 @@ For a `replace-reading` override:
 - The replacement reading becomes `selectedReading`.
 - The replacement reading is added to `alternatives` when its Jyutping is distinct from every existing dictionary alternative.
 - The replacement reading must not create a duplicate alternative when its Jyutping is identical to an existing dictionary alternative.
-- When the replacement Jyutping is identical to an existing dictionary alternative, the existing dictionary alternative remains in `alternatives` with its original dictionary provenance.
+- When the replacement Jyutping is identical to an existing dictionary alternative, the replacement reading becomes `selectedReading` with its user-override or manual-entry provenance, while the existing dictionary alternative remains in `alternatives` with its original dictionary provenance.
 - Original dictionary alternatives and their provenance are retained in every case.
 - The replacement reading uses `source: "user-override"` or `"manual-entry"` and must not claim dictionary provenance.
 
@@ -304,6 +304,7 @@ interface ConversionResult {
 - A `replace-reading` override must use `source: "user-override"` or `"manual-entry"`.
 - A distinct replacement reading must be added to `alternatives`.
 - A replacement reading with Jyutping identical to an existing dictionary alternative must not create a duplicate alternative; the existing dictionary alternative remains in `alternatives` with its original provenance.
+- `selectedReading` must either be an entry in `alternatives` or have a Jyutping pronunciation identical to an entry in `alternatives`.
 - Original dictionary alternatives and their provenance are retained when a replacement override is applied.
 - `finalJyutping` must be `null` if any segment has `segmentType: "unresolved"`, any Cantonese segment has `readingStatus: "unresolved"`, or any Cantonese segment has no selected reading.
 - `isComplete` must be `false` if any of those conditions applies.
