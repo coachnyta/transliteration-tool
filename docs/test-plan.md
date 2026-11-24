@@ -2,34 +2,24 @@
 
 ## Status
 
-Draft for review.
+Approved for implementation planning.
 
 ## Purpose
 
-This plan defines how to verify the Cantonese-to-Jyutping conversion core and
-Rime-Cantonese ingestion pipeline for Milestone 1a.
-
-It ensures that the implementation:
-
-- Follows `docs/conversion-rules.md`.
-- Produces data consistent with `docs/data-model.md`.
-- Uses and preserves provenance from the pinned source in
-  `docs/data-sources.md`.
-- Handles ambiguity, passthrough text, and unresolved text predictably.
-- Produces reproducible test results.
+This plan defines how to verify the Cantonese-to-Jyutping conversion core and Rime-Cantonese ingestion pipeline for Milestone 1a.
 
 ## Scope
 
 ### In scope
 
-- Unit tests for individual conversion-core modules.
+- Unit tests for conversion-core modules.
 - Integration tests for the conversion pipeline.
 - Data-ingestion tests.
 - Dictionary lookup and segmentation tests.
 - Jyutping formatting tests.
 - Error, edge-case, and regression tests.
 - Type-level checks where practical.
-- Manual linguistic validation of a small golden title set.
+- Manual linguistic validation of a golden title set.
 
 ### Out of scope
 
@@ -41,58 +31,45 @@ It ensures that the implementation:
 - Performance benchmarking beyond basic sanity checks.
 - Deployment or production monitoring tests.
 - Full-dictionary exhaustive validation.
+- Persistent title library tests.
+- Persistent correction storage tests.
+- JSON import/export tests.
+
+## Deferred product-level acceptance criteria
+
+The following are part of the eventual v1 product, but are explicitly deferred beyond Milestone 1a:
+
+- Correction persistence after reload or restart.
+- Local title library persistence.
+- JSON export and import.
+- Browser UI correction workflow.
+- End-to-end persistence tests.
+
+Milestone 1a may test in-memory override behavior, but must not test persistence.
 
 ## Test principles
 
-1. **Test the contract, not implementation details.** Tests should verify
-   observable behavior and returned data structures.
-2. **Use deterministic fixtures.** Unit tests must not depend on the full
-   Rime-Cantonese dataset or network access.
-3. **Preserve provenance.** Every dictionary-derived result must identify its
-   source and source entry.
-4. **Never invent expected Jyutping.** Golden values must come from a
-   validated dictionary entry, official documentation, or a manually verified
-   source.
-5. **Make failures actionable.** A failing test should identify the input,
-   expected result, actual result, and likely cause.
-6. **Keep tests focused.** Each test should verify one behavior.
-
-Vitest recommends organizing tests around the behavior or contract being
-verified; each test should have a descriptive name and focused assertions. [114][96]
-
-## Test levels
-
-| Level | Purpose | Data used | Runs in CI |
-|---|---|---|---|
-| Unit | Verify isolated modules and pure functions | Small fixtures | Yes |
-| Integration | Verify module cooperation and conversion flow | Small fixtures or curated normalized subset | Yes |
-| Ingestion | Verify parsing, validation, normalization, and reporting | Pinned source sample or full pinned dataset | Yes, with an appropriate mode |
-| Type | Verify important public type contracts | Type definitions and fixtures | Yes |
-| Manual | Validate real-world linguistic correctness | Curated golden title set | No |
+1. Test observable behavior, not implementation details.
+2. Use deterministic fixtures; do not require network access in unit tests.
+3. Preserve provenance for every dictionary-derived result.
+4. Never invent expected Jyutping.
+5. Make failures actionable.
+6. Keep each test focused on one behavior.
 
 ## Tooling
 
-Use the tools selected in the project setup. At minimum, the project must
-support:
+Use the tools approved in the implementation plan.
 
-- TypeScript type checking.
-- Linting.
-- Unit and integration testing.
-- Test coverage reporting.
-- Data-ingestion execution.
+Proposed tooling, subject to approval:
 
-Recommended default:
+- Vitest for unit, integration, and ingestion tests.
+- TypeScript compiler for type checking.
+- ESLint with TypeScript support for linting.
+- Vitest coverage reporting.
 
-- **Test runner:** Vitest
-- **Type checking:** `tsc --noEmit`
-- **Linting:** ESLint with TypeScript support
-- **Coverage:** Vitest coverage reporting
+The implementation plan must list every dependency, exact version, purpose, and license before installation.
 
-Do not add a testing dependency without approval.
-
-## Required npm scripts
-
-The implementation must provide and successfully run these commands:
+## Required commands
 
 ```bash
 npm run typecheck
@@ -102,15 +79,7 @@ npm run test:coverage
 npm run ingest:data
 ```
 
-Optional but recommended:
-
-```bash
-npm run test:unit
-npm run test:integration
-npm run test:ingestion
-```
-
-All commands must exit with status code `0` when successful.
+All applicable commands must exit with status code `0`.
 
 ## Test file layout
 
@@ -133,28 +102,20 @@ tests/
     └── titles.json
 ```
 
-Notes:
-
-- Unit tests must use small, controlled fixtures.
-- Integration tests may use a curated normalized subset, but must not require
-  network access.
-- Golden test data must be versioned in the repository.
-- Do not commit private, licensed, or redistribution-restricted data without
-  verifying `docs/data-sources.md`.
-
 ## Fixtures
 
 ### Dictionary fixtures
 
 Create a small fixture dictionary containing:
 
-- At least 10 single-character entries.
+- At least 10 character entries.
 - At least 10 word entries.
 - At least 5 phrase entries.
 - At least 3 entries with multiple readings.
 - At least 2 entries with Traditional and Simplified variants, if supported.
-- At least 1 invalid entry for validation testing.
-- At least 1 duplicate or conflicting entry for deterministic handling tests.
+- At least 1 invalid entry.
+- At least 1 exact duplicate entry.
+- At least 1 same-text/different-reading conflict.
 
 Every fixture must include:
 
@@ -191,129 +152,156 @@ Create at least 20 title fixtures covering:
 - Whitespace-only input
 - A very long input beyond the v1 title limit
 - Input containing emoji
+- Input containing supplementary-plane characters
+- Input with repeated whitespace
 - Input containing unsupported CJK scripts, if applicable
 
-Each fixture must record:
+## Mandatory matching tests
 
-- Input
-- Expected segment types
-- Expected conversion behavior
-- Expected final Jyutping, only when a validated reading exists
-- Expected unresolved or passthrough markers
-- Applicable source and provenance expectations
+Verify:
+
+- Whole-title exact phrase match takes precedence over partial phrase matching.
+- A longer phrase candidate defeats a shorter phrase candidate.
+- A phrase match defeats a word match.
+- A word match defeats character fallback.
+- Character fallback occurs only when no word or phrase match exists.
+- User override defeats all dictionary matches.
+- Equal-length candidates resolve by dictionary priority.
+- Equal-length and equal-priority candidates resolve by stable source order.
+- Matching is anchored at the current UTF-16 code-unit offset.
+- Offsets remain correct for emoji, supplementary-plane characters, repeated whitespace, and mixed scripts.
+
+## Mandatory ambiguity tests
+
+| Case | Expected `segmentType` | Expected `readingStatus` | Expected `selectionReason` |
+|---|---|---|---|
+| One credible reading | `cantonese` | `resolved` | `dictionary-default`, `highest-priority`, or `stable-source-order` |
+| Multiple readings with explicit dictionary default | `cantonese` | `ambiguous` | `dictionary-default` |
+| Multiple readings with different priorities | `cantonese` | `ambiguous` | `highest-priority` |
+| Multiple readings with equal priority | `cantonese` | `ambiguous` | `stable-source-order` |
+| Multiple readings with no usable ordering | `cantonese` | `ambiguous` | `none` |
+| User override among alternatives | `cantonese` | `ambiguous` | `user-override` |
+| Cantonese text with no reading | `cantonese` | `unresolved` | `none` |
+| Passthrough text | `passthrough` | `resolved` | `none` |
+
+Additional assertions:
+
+- `selectedReading` must be one of `alternatives` when non-null.
+- Every alternative must retain source, source entry ID, source version, priority, and default flag.
+- `finalJyutping` must be `null` when any Cantonese segment lacks a selected reading.
+- A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 
 ## Unit test requirements
 
 ### Normalization
 
-Test that the normalizer:
+Verify:
 
-- Preserves the original input string.
-- Normalizes predictable whitespace.
-- Classifies Cantonese Han characters correctly.
-- Classifies Latin letters, digits, punctuation, whitespace, and unsupported
-  scripts correctly.
-- Handles empty input.
-- Handles whitespace-only input.
-- Handles mixed-script input.
-- Does not mutate or incorrectly transform non-Cantonese characters.
+- Original input preservation.
+- Separate normalized matching representation.
+- Correct character classification.
+- Empty and whitespace-only input.
+- Mixed-script input.
+- Emoji and supplementary-plane characters.
+- Repeated whitespace.
+- Non-Cantonese characters remain unchanged.
+- UTF-16 code-unit offset correctness.
 
 ### Dictionary
 
-Test that the dictionary:
+Verify:
 
-- Finds an exact character.
-- Finds an exact word.
-- Finds an exact phrase.
-- Returns all readings for a multi-reading entry.
-- Returns provenance metadata.
-- Returns deterministic results for equally ranked matches.
-- Handles missing entries without throwing.
-- Rejects or reports malformed entries according to the data-validation rules.
-- Supports lookup by Traditional and Simplified forms, if supported.
+- Exact whole-title phrase lookup.
+- Longest-match lookup at a given offset.
+- Word lookup.
+- Character lookup.
+- Multiple-reading retrieval.
+- Provenance metadata.
+- Deterministic ordering for equal-priority readings.
+- Missing-entry behavior.
+- Invalid-entry handling.
+- Traditional and Simplified lookup, if supported.
 
 ### Segmenter
 
-Test that segmentation follows this exact priority:
+Verify:
 
-1. User override
-2. Exact phrase match
-3. Longest phrase match
-4. Word match
-5. Character fallback
-6. Unresolved
-
-Specifically verify:
-
-- A longer phrase match defeats a shorter word match.
-- A word match defeats character fallback.
-- An override defeats all dictionary matches.
-- An unmatched Cantonese character becomes unresolved.
-- Non-Cantonese text becomes passthrough.
-- Offsets correctly map segments back to the original title.
-- Overlapping matches are resolved deterministically.
+- User override precedence.
+- Whole-title exact phrase precedence.
+- Longest phrase precedence.
+- Word precedence over character fallback.
+- Character fallback.
+- Unresolved Cantonese text.
+- Passthrough text.
+- Offset correctness.
+- Deterministic tie-breaking.
 
 ### Converter
 
-Test that `convertCantoneseTitle`:
+Verify:
 
-- Returns a complete `ConversionResult`.
-- Produces segments for all input text.
-- Preserves original text and offsets.
-- Selects the expected reading according to priority rules.
-- Returns alternatives when available.
-- Marks unresolved Cantonese text.
-- Marks passthrough text.
-- Includes source and confidence metadata.
-- Handles empty and whitespace-only input without crashing.
-- Handles input beyond the v1 length limit according to the documented rule.
+- Complete `ConversionResult` structure.
+- Segment coverage of all input text.
+- Correct reading selection.
+- Alternatives retention.
+- Ambiguous handling.
+- Unresolved handling.
+- Passthrough handling.
+- Empty and whitespace-only input.
+- Input beyond the v1 length limit.
+- `finalJyutping` completeness rules.
+- No unexpected network request.
 
 ### Formatter
 
-Test that the formatter:
+Verify:
 
-- Outputs tone numbers from 1 through 6.
-- Separates Jyutping syllables with single spaces.
-- Preserves non-Cantonese passthrough text.
-- Produces the expected final Jyutping string.
-- Produces the expected segment breakdown.
-- Does not add, remove, or reorder input characters.
+- Tone numbers 1–6.
+- Space-separated syllables.
+- Passthrough preservation.
+- Final Jyutping assembly.
+- Segment breakdown.
+- No input-character loss.
 
-## Integration test requirements
+## Integration tests
 
 ### Conversion pipeline
 
-Create integration tests that exercise:
+Verify:
 
-`input → normalization → segmentation → lookup → conversion → formatting`
+```text
+input → classification → segmentation → lookup → reading selection → formatting
+```
 
-Verify that:
+Specifically:
 
-- A phrase-dictionary title produces a phrase-level segment.
-- A word-level title produces word-level segments.
-- A character-fallback title produces character-level segments.
-- Mixed Cantonese and English text produces both converted and passthrough
-  segments.
-- Ambiguous readings are retained.
-- User overrides take precedence.
-- Unresolved text remains visible and marked.
-- The final Jyutping string is assembled correctly.
-- The result conforms structurally to `docs/data-model.md`.
+- Phrase-level conversion.
+- Word-level conversion.
+- Character fallback.
+- Mixed Cantonese and English.
+- Ambiguous readings.
+- User overrides.
+- Unresolved text.
+- Correct final Jyutping when complete.
+- `finalJyutping: null` when incomplete.
+- Structural conformance to `docs/data-model.md`.
 
 ### Ingestion pipeline
 
-Create integration tests that verify:
+Verify:
 
-- The ingestion script reads the pinned source files.
-- It produces normalized output.
-- It validates required fields.
-- It rejects or quarantines malformed entries.
-- It detects duplicate or conflicting entries.
-- It preserves multiple readings.
-- It records source and source entry IDs.
-- It writes an ingestion report.
-- It is deterministic for the same pinned input.
-- It exits nonzero when required input is missing or invalid.
+- Pinned source files are read from `data/raw/`.
+- Source data is parsed without execution or evaluation.
+- Normalized JSON output is produced.
+- Required fields are validated.
+- Malformed entries are rejected or quarantined.
+- Exact duplicates are collapsed.
+- Distinct readings are retained.
+- Source and source entry IDs are retained.
+- Ingestion report is generated.
+- Deterministic output for the same pinned input.
+- Nonzero exit on missing or invalid required input.
+- No source files or unrelated repository content are overwritten.
 
 ## Golden title set
 
@@ -326,7 +314,7 @@ Include at least:
 - 5 titles with mixed scripts or punctuation.
 - 5 titles that expose dictionary gaps or unresolved text.
 
-For each golden title, record:
+For each title, record:
 
 ```json
 {
@@ -341,18 +329,11 @@ For each golden title, record:
 }
 ```
 
-Rules:
-
-- Do not fabricate expected Jyutping.
-- If a reading cannot be validated, set `expectedFinalJyutping` to `null` and
-  document the uncertainty.
-- Add a golden case whenever a real-world conversion failure is discovered.
-- Golden tests are regression tests, not a substitute for dictionary
-  validation.
+Do not fabricate expected Jyutping. If a reading cannot be validated, set `expectedFinalJyutping` to `null` and document the uncertainty.
 
 ## Acceptance criteria
 
-Milestone 1a passes when all of the following are true:
+Milestone 1a passes when:
 
 1. `npm run typecheck` passes.
 2. `npm run lint` passes.
@@ -360,86 +341,66 @@ Milestone 1a passes when all of the following are true:
 4. `npm run test:coverage` passes.
 5. `npm run ingest:data` completes successfully using the pinned source.
 6. Every dictionary-derived result includes source provenance.
-7. Multiple readings are preserved, not overwritten.
-8. Longest-match, word-match, character-fallback, override, and unresolved
-   behavior matches `docs/conversion-rules.md`.
-9. Non-Cantonese text is passed through unchanged.
-10. No input character is silently omitted.
-11. Golden-title tests pass or explicitly document a known, approved limitation.
-12. The verification model finds no unresolved BLOCKER findings.
-13. The user manually approves the linguistic results for the golden title set.
-
-## Failure handling
-
-A test failure must include:
-
-- Test name and file
-- Input
-- Expected result
-- Actual result
-- Relevant diff or structured comparison
-- Suspected cause, if determinable
-- Whether the failure is a code defect, test defect, data defect, or
-  specification ambiguity
-
-If a failure reveals a specification ambiguity, stop and ask the user. Do not
-change the specification or implementation silently.
+7. Multiple readings are preserved.
+8. Default selection follows the documented deterministic order.
+9. Ambiguous segments without a usable default require user selection.
+10. Matching follows the documented anchored, longest-first, tie-broken algorithm.
+11. Offsets use UTF-16 code units and refer to the original input.
+12. Non-Cantonese text is passed through unchanged.
+13. No input character is silently omitted.
+14. Golden-title tests pass or explicitly document an approved limitation.
+15. The verification model finds no unresolved `BLOCKER` findings.
+16. The user manually approves linguistic results for the golden title set.
 
 ## Manual validation checklist
-
-After automated tests pass, manually verify:
 
 - [ ] At least 10 real titles from your music and movie library.
 - [ ] At least 3 titles with mixed English and Cantonese.
 - [ ] At least 3 titles with ambiguous readings.
 - [ ] At least 3 titles that trigger character fallback.
 - [ ] At least 2 titles with unresolved text.
-- [ ] At least 2 titles where a user correction is applied.
-- [ ] The correction remains available after reloading or restarting the
-      relevant local process, where persistence is in scope.
-- [ ] Exported data can be imported without loss, if export/import is in scope.
+- [ ] At least 2 titles where an in-memory user correction is applied.
 - [ ] Dictionary source and version are visible or retrievable.
 - [ ] No unexpected network request occurs during conversion.
 
 ## Traceability
 
-Each test should trace to at least one requirement:
-
 | Requirement area | Source document | Test coverage |
 |---|---|---|
 | V1 contract | `docs/product-brief.md` | Converter and integration tests |
-| Conversion priority | `docs/conversion-rules.md` | Segmenter and integration tests |
+| Matching algorithm | `docs/conversion-rules.md` | Segmenter and integration tests |
+| Ambiguity representation | `docs/data-model.md` | Converter, formatter, and ambiguity tests |
+| Default selection | `docs/conversion-rules.md` | Segmenter, converter, and ambiguity tests |
+| Offset contract | `docs/data-model.md` | Normalization and converter tests |
 | Data provenance | `docs/data-sources.md` | Dictionary, ingestion, and golden tests |
 | Result structure | `docs/data-model.md` | Converter, formatter, and type tests |
 | Tone-number output | `docs/product-brief.md` | Formatter tests |
-| Ambiguity handling | `docs/product-brief.md` | Dictionary, converter, and golden tests |
 | Unresolved handling | `docs/product-brief.md` | Converter and golden tests |
 | Override behavior | `docs/product-brief.md` | Segmenter and integration tests |
+| Security and integrity | `docs/implementation-brief.md` | Ingestion and converter tests |
 
-## Review checklist for verification model
+## Review checklist
 
-The verification model must check that the test plan and implementation:
+The verification model must check that:
 
-- Cover every in-scope requirement.
-- Do not test implementation internals instead of observable behavior.
-- Use deterministic fixtures and avoid network dependence.
-- Preserve provenance and source versions.
-- Avoid fabricated Jyutping expectations.
-- Cover ambiguity, fallback, passthrough, unresolved text, and overrides.
-- Include ingestion validation and failure reporting.
-- Include security-relevant input handling where applicable.
-- Clearly separate automated from manual validation.
-- Do not add scope beyond Milestone 1a.
+- Every in-scope requirement is covered.
+- Tests verify observable behavior.
+- Fixtures are deterministic and offline.
+- Provenance and source versions are preserved.
+- No Jyutping expectation is fabricated.
+- Ambiguity, fallback, passthrough, unresolved text, and overrides are covered.
+- Matching, tie-breaking, and offset behavior are covered.
+- Ingestion validation, duplicate handling, and failure reporting are covered.
+- Persistence, title library, and import/export are explicitly deferred.
+- No scope is added beyond Milestone 1a.
 
 Classify findings as:
 
-- `BLOCKER`: must be fixed before implementation or merge
-- `WARNING`: should be addressed, but does not block implementation
-- `QUESTION`: requires a human decision
+- `BLOCKER`
+- `WARNING`
+- `QUESTION`
 
 ## Final test report format
-
-At the end of Milestone 1a, provide:
 
 ```md
 ## Test Report
@@ -447,14 +408,14 @@ At the end of Milestone 1a, provide:
 ### Commands run
 - Command
 - Exit status
-- Summary of result
+- Summary
 
 ### Coverage
 - Statements
 - Branches
 - Functions
 - Lines
-- Notes on meaningful coverage gaps
+- Meaningful coverage gaps
 
 ### Test results
 - Total tests
@@ -471,22 +432,10 @@ At the end of Milestone 1a, provide:
 - Manual corrections required
 
 ### Issues found
-- Numbered list of issues
-- Severity: BLOCKER, WARNING, QUESTION
+- Numbered findings
+- Severity
 - Recommended resolution
 
 ### Verdict
 - PASS, PASS WITH LIMITATIONS, or FAIL
 ```
-
-## Approval gate
-
-Before implementation begins, the verification model must review this test plan
-and classify any gaps as `BLOCKER`, `WARNING`, or `QUESTION`.
-
-No implementation work should begin until:
-
-1. The user approves this test plan.
-2. All `BLOCKER` findings are resolved.
-3. All `QUESTION` findings receive an explicit user decision.
-4. The implementation brief and test plan are mutually consistent.
