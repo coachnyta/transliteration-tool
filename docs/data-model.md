@@ -40,8 +40,7 @@ type EntryType = "character" | "word" | "phrase";
 type ConversionErrorCode =
   | "INPUT_TOO_LONG"
   | "INVALID_OVERRIDE"
-  | "OVERLAPPING_OVERRIDES"
-  | "INVALID_INPUT";
+  | "OVERLAPPING_OVERRIDES";
 ```
 
 ## Reading
@@ -172,6 +171,17 @@ Override rules:
 - Both override kinds set `userOverride: true` and `selectionReason: "user-override"`.
 - An override that does not match the input causes a validation error.
 
+### Replacement reading and alternatives
+
+For a `replace-reading` override:
+
+- The replacement reading becomes `selectedReading`.
+- The replacement reading is added to `alternatives` when its Jyutping is distinct from every existing dictionary alternative.
+- The replacement reading must not create a duplicate alternative when its Jyutping is identical to an existing dictionary alternative.
+- When the replacement Jyutping is identical to an existing dictionary alternative, the existing dictionary alternative remains in `alternatives` with its original dictionary provenance.
+- Original dictionary alternatives and their provenance are retained in every case.
+- The replacement reading uses `source: "user-override"` or `"manual-entry"` and must not claim dictionary provenance.
+
 ## ConversionError and ConversionOutcome
 
 ```ts
@@ -204,7 +214,6 @@ Error codes:
 | `INPUT_TOO_LONG` | Input exceeds 100 UTF-16 code units |
 | `INVALID_OVERRIDE` | Override offsets or original text do not match the input, or the override references an unavailable reading |
 | `OVERLAPPING_OVERRIDES` | Two or more overrides overlap |
-| `INVALID_INPUT` | Input cannot be processed as a valid title |
 
 ## ConversionSegment
 
@@ -293,6 +302,9 @@ interface ConversionResult {
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 - A `select-alternative` override must reference a reading already present in `alternatives` and must preserve that reading’s dictionary provenance.
 - A `replace-reading` override must use `source: "user-override"` or `"manual-entry"`.
+- A distinct replacement reading must be added to `alternatives`.
+- A replacement reading with Jyutping identical to an existing dictionary alternative must not create a duplicate alternative; the existing dictionary alternative remains in `alternatives` with its original provenance.
+- Original dictionary alternatives and their provenance are retained when a replacement override is applied.
 - `finalJyutping` must be `null` if any segment has `segmentType: "unresolved"`, any Cantonese segment has `readingStatus: "unresolved"`, or any Cantonese segment has no selected reading.
 - `isComplete` must be `false` if any of those conditions applies.
 - Every `Reading` with `source: "dictionary"` must include non-empty `provenance`.

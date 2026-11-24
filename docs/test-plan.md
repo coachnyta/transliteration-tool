@@ -60,9 +60,13 @@ Milestone 1a may test in-memory override behavior, but must not test persistence
 
 Use the tools approved in the implementation plan.
 
+Runtime requirement:
+
+- Node.js: `^22.13.0 || >=24.0.0`
+
 Approved dependency versions and licenses:
 
-- `typescript` `7.0.2`, Apache-2.0
+- `typescript` `6.0.3`, Apache-2.0
 - `vitest` `5.1.1`, MIT
 - `eslint` `10.15.0`, MIT
 - `typescript-eslint` `8.73.0`, MIT
@@ -185,7 +189,8 @@ Verify:
 | Multiple readings with equal non-null priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
 | Multiple readings with all `null` priorities | `cantonese` | `ambiguous` | Required | `stable-source-order` |
 | `select-alternative` override among alternatives | `cantonese` | `ambiguous` | Required | `user-override` |
-| `replace-reading` override | `cantonese` | `ambiguous` | Required | `user-override` |
+| `replace-reading` override with distinct Jyutping | `cantonese` | `ambiguous` | Required | `user-override` |
+| `replace-reading` override with Jyutping identical to an existing alternative | `cantonese` | `ambiguous` | Required | `user-override` |
 | Cantonese text with no reading | `cantonese` | `unresolved` | `null` | `none` |
 | Passthrough text | `passthrough` | `resolved` | `null` | `none` |
 | Unsupported script | `unresolved` | `unresolved` | `null` | `none` |
@@ -198,6 +203,9 @@ Additional assertions:
 - `selectedReading` must be one of `alternatives` when non-null.
 - Every alternative must retain structured provenance.
 - Identical Jyutping from multiple source entry IDs must produce one alternative, not false ambiguity.
+- A distinct replacement reading must be added to `alternatives`.
+- A replacement reading with Jyutping identical to an existing dictionary alternative must not create a duplicate alternative.
+- Original dictionary alternatives and their provenance must be retained when a replacement override is applied.
 - `finalJyutping` must be `null` when any segment is `unresolved` or any Cantonese segment lacks a selected reading.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 
@@ -253,6 +261,11 @@ Verify:
 
 - `select-alternative` override precedence and provenance preservation.
 - `replace-reading` override precedence.
+- Override validation against the exact established segment span.
+- A `select-alternative` override referencing a reading outside the segment returns `INVALID_OVERRIDE`.
+- A distinct replacement reading is added to `alternatives`.
+- A replacement reading with Jyutping identical to an existing dictionary alternative does not create a duplicate alternative.
+- Original dictionary alternatives and provenance are retained after a replacement override.
 - Whole-title exact phrase precedence.
 - Longest phrase precedence.
 - Word precedence over character fallback.
@@ -302,7 +315,7 @@ Verify:
 Verify:
 
 ```text
-input → validation → classification → segmentation → lookup → reading selection → formatting
+input → validation → classification → segmentation → lookup → override validation → reading selection → formatting
 ```
 
 Specifically:
@@ -313,7 +326,8 @@ Specifically:
 - Mixed Cantonese and English.
 - Ambiguous readings.
 - `select-alternative` overrides.
-- `replace-reading` overrides.
+- `replace-reading` overrides with distinct replacement Jyutping.
+- `replace-reading` overrides with Jyutping identical to an existing dictionary alternative.
 - Unresolved text.
 - Unsupported scripts.
 - Correct final Jyutping when complete.

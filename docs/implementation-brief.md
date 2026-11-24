@@ -72,6 +72,8 @@ If these documents conflict, stop and ask the user. Do not resolve a conflict by
 ## Technical constraints
 
 - Use TypeScript with strict mode enabled.
+- Require Node.js `^22.13.0 || >=24.0.0`.
+- Use the same Node.js major version in local development and CI.
 - Keep conversion logic independent of React, the DOM, and browser-only APIs.
 - Use Node.js-compatible TypeScript for the ingestion pipeline.
 - Do not add a dependency without explicit user approval.
@@ -289,9 +291,13 @@ Do not silently discard malformed records.
 
 The following is the exact proposed dependency list. Do not install any dependency until the user approves this exact list.
 
+Runtime requirement:
+
+- Node.js: `^22.13.0 || >=24.0.0`
+
 | Package | Version | License | Classification | Purpose |
 |---|---:|---|---|---|
-| `typescript` | `7.0.2` | Apache-2.0 | Development | TypeScript compiler and type checking |
+| `typescript` | `6.0.3` | Apache-2.0 | Development | TypeScript compiler and type checking |
 | `vitest` | `5.1.1` | MIT | Development | Unit, integration, and ingestion tests |
 | `eslint` | `10.15.0` | MIT | Development | Linting |
 | `typescript-eslint` | `8.73.0` | MIT | Development | TypeScript-aware linting |

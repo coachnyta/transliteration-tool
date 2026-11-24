@@ -16,6 +16,7 @@ input title
 → classify characters
 → segment using original input offsets
 → dictionary lookup
+→ validate overrides against established segments
 → select reading
 → format Jyutping
 → return ConversionOutcome
@@ -49,30 +50,45 @@ Latin letters, digits, punctuation, and whitespace are non-Cantonese text and mu
 
 Unsupported scripts—for example Korean Hangul, Japanese kana, or other non-Cantonese CJK scripts—are marked `segmentType: "unresolved"` and `readingStatus: "unresolved"`. They must remain visible and prevent a complete final Jyutping result.
 
+## Override processing sequence
+
+Overrides are validated and applied after the applicable dictionary segment and its candidate readings have been identified. This avoids a circular dependency between override validation and segmentation.
+
+For each override:
+
+1. Identify the segment span and its applicable dictionary candidates using the normal matching algorithm.
+2. Validate that the override’s `startOffset` and `endOffset` exactly match that segment span.
+3. Validate that `originalText` exactly equals the original input slice between those offsets.
+4. For `select-alternative`, validate that `readingId` refers to a reading already present in that segment’s `alternatives`.
+5. For `replace-reading`, validate that the supplied reading uses `source: "user-override"` or `"manual-entry"`.
+6. Apply the override to reading selection without changing the established segment boundaries.
+7. Return a structured `INVALID_OVERRIDE` error if any validation step fails.
+
+A valid override takes precedence over dictionary selection for that exact segment. It does not change segment boundaries or cause re-segmentation.
+
 ## Matching algorithm
 
 Matching is performed at the current input offset.
 
 At each offset:
 
-1. If a `select-alternative` override exists for this exact segment, select the referenced existing alternative.
-2. If a `replace-reading` override exists for this exact segment, use the supplied replacement reading.
-3. If the entire normalized title exactly matches one dictionary phrase, use that phrase.
-4. Otherwise, find all dictionary phrase candidates that begin at the current offset.
-5. Select the candidate with the greatest phrase length.
-6. If multiple candidates have the same length, select the candidate with the highest non-null dictionary priority.
-7. If multiple candidates have the same length and equal non-null priority, select the candidate with the lowest source entry ID.
-8. If source entry IDs are equal or unavailable, use stable source order.
-9. If no phrase candidate exists, find word candidates beginning at the current offset and apply the same length, priority, and stable-order rules.
-10. If no word candidate exists, attempt character-level lookup.
-11. If no character reading exists, mark the Cantonese text unresolved.
-12. Advance to the end of the selected segment and repeat.
+1. Find all dictionary phrase candidates that begin at the current offset.
+2. Select the candidate with the greatest phrase length.
+3. If multiple candidates have the same length, select the candidate with the highest non-null dictionary priority.
+4. If multiple candidates have the same length and equal non-null priority, select the candidate with the lowest source entry ID.
+5. If source entry IDs are equal or unavailable, use stable source order.
+6. If no phrase candidate exists, find word candidates beginning at the current offset and apply the same length, priority, and stable-order rules.
+7. If no word candidate exists, attempt character-level lookup.
+8. If no character reading exists, mark the Cantonese text unresolved.
+9. Advance to the end of the selected segment and repeat.
+
+After segmentation, apply any valid override for that exact segment using the override processing sequence above.
 
 ### Match precedence
 
 | Rank | Match type | Rule |
 |---|---|---|
-| 1 | User override | Always wins |
+| 1 | User override | Always wins for its exact segment |
 | 2 | Exact whole-title phrase match | The entire normalized title matches one dictionary phrase |
 | 3 | Longest phrase match | Greatest phrase length at the current offset |
 | 4 | Word match | Greatest word length at the current offset |
@@ -172,11 +188,14 @@ Examples, using validated dictionary readings for `<jyutping>`:
 
 ## User overrides
 
-- A user override always takes precedence over dictionary output for that segment.
+- A user override always takes precedence over dictionary output for that exact segment.
 - A user override must preserve the original segment and its offset.
 - A user override must set `userOverride: true` and `selectionReason: "user-override"`.
 - `select-alternative` selects an existing dictionary alternative and preserves its dictionary provenance.
 - `replace-reading` supplies a new pronunciation with `source: "user-override"` or `"manual-entry"`.
+- A distinct replacement reading is added to `alternatives`.
+- A replacement reading with Jyutping identical to an existing dictionary alternative must not create a duplicate alternative; the existing dictionary alternative remains in `alternatives` with its original provenance.
+- Original dictionary alternatives and their provenance are retained when a replacement override is applied.
 - In Milestone 1a, overrides are supplied through the `ConversionOptions.overrides` array.
 - Overrides must match the original input exactly at their declared UTF-16 offsets.
 - Overlapping overrides are invalid and return `OVERLAPPING_OVERRIDES`.
