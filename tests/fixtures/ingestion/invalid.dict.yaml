@@ -1,0 +1,7 @@
+[
+  {"sourceEntryId":"missing-reading","originalText":"文","entryType":"character","readings":["bad7"]},
+  {"sourceEntryId":"missing-text","entryType":"character","readings":["man4"]},
+  {"sourceEntryId":"invalid-tone","originalText":"好","entryType":"character","readings":["hou7"]},
+  {"sourceEntryId":"","originalText":"" ,"entryType":"character","readings":[]},
+  "unreadable"
+]

@@ -14,10 +14,12 @@ npm run typecheck
 npm run lint
 npm run test
 npm run test:coverage
-npm run ingest:data
+npm run ingest:data -- <manifest-path> <output-directory>
 ```
 
-The ingestion command is not ready to run until the pinned raw dictionary files and verified manifest are approved and installed.
+Ingestion reads a JSON manifest and raw dictionary files only from local paths. It verifies every manifest SHA-256 before parsing, writes only `dictionary.json` and `ingestion-report.json`, and does not download source data.
+
+The real Rime-Cantonese raw-data gate remains blocked until the three pinned dictionaries, source audit, verified Git blob SHAs, and verified SHA-256 hashes are approved and installed. Offline fixture ingestion may be run with a validated fixture manifest.
 
 ## Conversion Core Usage
 

@@ -1,0 +1,74 @@
+[
+  {
+    "sourceEntryId": "char-zung",
+    "originalText": "中",
+    "entryType": "character",
+    "readings": ["zung1"],
+    "traditionalText": "中",
+    "simplifiedText": "中",
+    "priority": null
+  },
+  {
+    "sourceEntryId": "word-zhongwen",
+    "originalText": "中文",
+    "entryType": "word",
+    "readings": ["zung1 man4"],
+    "priority": 100
+  },
+  {
+    "sourceEntryId": "phrase-hoenggong",
+    "originalText": "香港電影",
+    "entryType": "phrase",
+    "readings": ["hoeng1 gong2 din6 jing2"],
+    "priority": null
+  },
+  {
+    "sourceEntryId": "char-hang",
+    "originalText": "行",
+    "entryType": "character",
+    "readings": ["hang4", "haang6"],
+    "priority": 90
+  },
+  {
+    "sourceEntryId": "char-hang-identical-a",
+    "originalText": "行",
+    "entryType": "character",
+    "readings": ["hang4"],
+    "priority": 90
+  },
+  {
+    "sourceEntryId": "char-hang-identical-b",
+    "originalText": "行",
+    "entryType": "character",
+    "readings": ["hang4"],
+    "priority": 80
+  },
+  {
+    "sourceEntryId": "char-zhong-duplicate",
+    "originalText": "中",
+    "entryType": "character",
+    "readings": ["zung1"],
+    "priority": null
+  },
+  {
+    "sourceEntryId": "char-zhong-duplicate",
+    "originalText": "中",
+    "entryType": "character",
+    "readings": ["zung1"],
+    "priority": null
+  },
+  {
+    "sourceEntryId": "char-chung-conflict",
+    "originalText": "重",
+    "entryType": "character",
+    "readings": ["cung4"],
+    "priority": 80
+  },
+  {
+    "sourceEntryId": "char-zung-conflict",
+    "originalText": "重",
+    "entryType": "character",
+    "readings": ["zung6"],
+    "priority": 100
+  }
+]
