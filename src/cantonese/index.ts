@@ -17,4 +17,8 @@ export type {
   ConversionResult
 } from "./types.js";
 
-// The framework-agnostic converter will be exported here in a later commit.
+export { convertCantoneseTitle } from "./converter.js";
+export { formatJyutping, formatSegments } from "./formatter.js";
+export { loadDictionary, setDictionary, getDictionary, clearDictionary } from "./dictionary.js";
+export { normalizeText, classifyCharacter, classifyRange } from "./normalize.js";
+export { segmentTitle, selectDefaultReading } from "./segmenter.js";

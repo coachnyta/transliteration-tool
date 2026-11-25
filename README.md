@@ -19,8 +19,20 @@ npm run ingest:data
 
 The ingestion command is not ready to run until the pinned raw dictionary files and verified manifest are approved and installed.
 
+## Conversion Core Usage
+
+The public entry point exports the complete public types and the framework-agnostic conversion API:
+
+```ts
+import { convertCantoneseTitle } from "./src/cantonese/index.js";
+
+const outcome = convertCantoneseTitle("中文 English");
+```
+
+The converter is deterministic, offline, and does not execute input or source data.
+
 ## Scope
 
-The conversion API will remain framework-agnostic and will not use React, DOM, browser-only APIs, network requests, dynamic code execution, or persistence.
+The conversion API is framework-agnostic and does not use React, DOM, browser-only APIs, network requests, dynamic code execution, or persistence.
 
-Persistent title storage, correction storage, JSON import/export, and browser UI workflows are deferred beyond Milestone 1a.
+Persistent title storage, correction storage, JSON import/export, and browser UI workflows are deferred beyond Milestone 1a. Raw dictionaries, normalized output, and ingestion are not ready in this commit.
